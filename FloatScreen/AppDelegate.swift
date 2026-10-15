@@ -1,171 +1,141 @@
 import AppKit
-import ScreenCaptureKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var virtualDisplayManager: VirtualDisplayManager?
-    private var displayStreamer: DisplayStreamer?
-    private var floatingPanel: FloatingPanel?
-    private var streamView: StreamView?
-    private var inputMapper: InputMapper?
+    var containers: [ContainerWindow] = []
     private var menuBarController: MenuBarController?
-    private var windowMoverManager: WindowMoverManager?
+    private var globalShortcut: GlobalShortcut?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        checkScreenRecordingPermission { [weak self] granted in
-            guard granted else { return }
-            self?.startApp()
-        }
-    }
+        menuBarController = MenuBarController(appDelegate: self)
 
-    private func startApp() {
-        let displayManager = VirtualDisplayManager()
-        displayManager.createDisplay(width: 1920, height: 1080)
-        self.virtualDisplayManager = displayManager
+        setupHiddenMenu()
+        globalShortcut = GlobalShortcut { [weak self] in self?.toggleAllContainers() }
 
-        let windowMover = WindowMoverManager(displayID: displayManager.displayID)
-        self.windowMoverManager = windowMover
-
-        let streamView = StreamView(frame: .zero)
-        self.streamView = streamView
-
-        let panel = FloatingPanel(
-            streamView: streamView,
-            displaySize: NSSize(width: 1920, height: 1080)
-        )
-        self.floatingPanel = panel
-
-        panel.onAddApp = { [weak self] sender in
-            self?.showAddAppMenu(relativeTo: sender)
-        }
-
-        let mapper = InputMapper(
-            displayID: displayManager.displayID,
-            displaySize: NSSize(width: 1920, height: 1080)
-        )
-        streamView.inputDelegate = mapper
-        self.inputMapper = mapper
-
-        let streamer = DisplayStreamer(displayID: displayManager.displayID)
-        streamer.delegate = streamView
-        self.displayStreamer = streamer
-
-        menuBarController = MenuBarController(
-            panel: panel,
-            windowMover: windowMover,
-            onResolutionChange: { [weak self] width, height in
-                self?.rebuildPipeline(width: width, height: height)
-            }
-        )
-
-        panel.orderFront(nil)
-
-        Task {
-            try? await Task.sleep(for: .milliseconds(500))
-            await streamer.startCapture(width: 1920, height: 1080)
-        }
-    }
-
-    // MARK: - Add App Menu
-
-    private func showAddAppMenu(relativeTo view: NSView) {
-        guard WindowMoverManager.ensureAccessibility() else { return }
-        guard let manager = windowMoverManager else { return }
-
-        let windows = manager.availableWindows()
-        let menu = NSMenu()
-
-        if windows.isEmpty {
-            let item = NSMenuItem(title: "No windows available", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
+        let savedStates = StatePersistence.load()
+        if savedStates.isEmpty {
+            let container = ContainerWindow(url: URL(string: "https://www.google.com"))
+            containers.append(container)
+            container.orderFront(nil)
         } else {
-            for entry in windows {
-                let label = entry.title.isEmpty
-                    ? entry.appName
-                    : "\(entry.appName) \u{2014} \(entry.title)"
-                let item = NSMenuItem(
-                    title: label,
-                    action: #selector(addAppSelected(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.representedObject = Box(entry)
-                if let icon = entry.appIcon {
-                    item.image = icon.resizedForMenu()
-                }
-                menu.addItem(item)
+            for state in savedStates {
+                let url = URL(string: state.urlString)
+                let container = ContainerWindow(id: state.id, url: url, state: state)
+                containers.append(container)
+                container.orderFront(nil)
             }
         }
 
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: view)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidClose(_:)),
+            name: NSWindow.willCloseNotification, object: nil
+        )
     }
 
-    @objc private func addAppSelected(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? Box<WindowEntry> else { return }
-        windowMoverManager?.moveToVirtualDisplay(box.value)
+    func applicationWillTerminate(_ notification: Notification) {
+        let states = containers.map { $0.captureState() }
+        StatePersistence.save(states)
     }
 
-    // MARK: - Permission Checks
+    @discardableResult
+    func newContainer(url: URL? = nil) -> ContainerWindow {
+        let container = ContainerWindow(url: url)
+        containers.append(container)
+        container.orderFront(nil)
+        menuBarController?.rebuildMenu()
+        return container
+    }
 
-    private func checkScreenRecordingPermission(completion: @escaping (Bool) -> Void) {
-        Task {
-            do {
-                _ = try await SCShareableContent.current
-                await MainActor.run { completion(true) }
-            } catch {
-                await MainActor.run {
-                    self.showPermissionAlert()
-                    completion(false)
-                }
-            }
+    func toggleAllContainers() {
+        let anyVisible = containers.contains { $0.isVisible }
+        for c in containers {
+            if anyVisible { c.orderOut(nil) } else { c.orderFront(nil) }
         }
     }
 
-    private func showPermissionAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording Permission Required"
-        alert.informativeText = "FloatScreen needs Screen Recording permission to capture the virtual display. Please grant access in System Settings > Privacy & Security > Screen Recording, then relaunch the app."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Quit")
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-            }
-        }
-        NSApplication.shared.terminate(nil)
+    @objc private func windowDidClose(_ notification: Notification) {
+        guard let window = notification.object as? ContainerWindow else { return }
+        containers.removeAll { $0 === window }
+        menuBarController?.rebuildMenu()
     }
 
-    // MARK: - Pipeline Rebuild
+    // MARK: - Hidden Menu for Keyboard Shortcuts
 
-    func rebuildPipeline(width: Int, height: Int) {
-        Task {
-            await displayStreamer?.stopCapture()
+    private func setupHiddenMenu() {
+        let mainMenu = NSMenu()
 
-            virtualDisplayManager?.changeResolution(width: width, height: height)
-            guard let displayManager = virtualDisplayManager else { return }
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "Quit FloatScreen",
+                                   action: #selector(NSApplication.terminate(_:)),
+                                   keyEquivalent: "q"))
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
 
-            await MainActor.run {
-                floatingPanel?.updateForResolution(NSSize(width: width, height: height))
-                inputMapper?.updateDisplaySize(NSSize(width: width, height: height))
-                inputMapper?.updateDisplayID(displayManager.displayID)
-                windowMoverManager?.updateDisplayID(displayManager.displayID)
-            }
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(NSMenuItem(title: "New Container",
+                                    action: #selector(handleNewContainer),
+                                    keyEquivalent: "n"))
+        fileMenu.addItem(NSMenuItem(title: "Close Container",
+                                    action: #selector(handleCloseContainer),
+                                    keyEquivalent: "w"))
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
 
-            let streamer = DisplayStreamer(displayID: displayManager.displayID)
-            streamer.delegate = streamView
-            self.displayStreamer = streamer
+        let navMenuItem = NSMenuItem()
+        let navMenu = NSMenu(title: "Navigation")
+        navMenu.addItem(NSMenuItem(title: "Focus URL Field",
+                                   action: #selector(handleFocusURL),
+                                   keyEquivalent: "l"))
+        navMenu.addItem(NSMenuItem(title: "Reload",
+                                   action: #selector(handleReload),
+                                   keyEquivalent: "r"))
 
-            try? await Task.sleep(for: .milliseconds(500))
-            await streamer.startCapture(width: width, height: height)
+        let backItem = NSMenuItem(title: "Back",
+                                  action: #selector(handleBack),
+                                  keyEquivalent: "[")
+        navMenu.addItem(backItem)
+
+        let forwardItem = NSMenuItem(title: "Forward",
+                                     action: #selector(handleForward),
+                                     keyEquivalent: "]")
+        navMenu.addItem(forwardItem)
+
+        navMenuItem.submenu = navMenu
+        mainMenu.addItem(navMenuItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    private var activeContainer: ContainerWindow? {
+        NSApp.keyWindow as? ContainerWindow
+            ?? containers.last(where: { $0.isVisible })
+    }
+
+    @objc private func handleNewContainer() {
+        newContainer()
+    }
+
+    @objc private func handleCloseContainer() {
+        activeContainer?.close()
+    }
+
+    @objc private func handleFocusURL() {
+        if let c = activeContainer {
+            c.makeKeyAndOrderFront(nil)
+            c.toolbarView.focusURLField()
         }
     }
-}
 
-// Type-erased box so structs can be stored in representedObject
-final class Box<T> {
-    let value: T
-    init(_ value: T) { self.value = value }
+    @objc private func handleReload() {
+        activeContainer?.webView.reload()
+    }
+
+    @objc private func handleBack() {
+        activeContainer?.webView.goBack()
+    }
+
+    @objc private func handleForward() {
+        activeContainer?.webView.goForward()
+    }
 }

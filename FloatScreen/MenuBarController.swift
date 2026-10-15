@@ -2,117 +2,96 @@ import AppKit
 
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
-    private let panel: FloatingPanel
-    private let windowMover: WindowMoverManager
-    private let onResolutionChange: (Int, Int) -> Void
+    private weak var appDelegate: AppDelegate?
+    private let favorites = FavoritesManager()
 
-    private var isAlwaysOnTop = true
-    private var currentOpacity: CGFloat = 1.0
-    private var currentResolutionIndex = 1
+    private static let favoritesMenuID = NSUserInterfaceItemIdentifier("favorites")
 
-    private let resolutions: [(String, Int, Int)] = [
-        ("1280 \u{00d7} 720", 1280, 720),
-        ("1920 \u{00d7} 1080", 1920, 1080),
-        ("2560 \u{00d7} 1440", 2560, 1440),
-    ]
-
-    private static let addAppMenuID = NSUserInterfaceItemIdentifier("addApp")
-    private static let sendBackMenuID = NSUserInterfaceItemIdentifier("sendBack")
-
-    init(panel: FloatingPanel,
-         windowMover: WindowMoverManager,
-         onResolutionChange: @escaping (Int, Int) -> Void) {
-        self.panel = panel
-        self.windowMover = windowMover
-        self.onResolutionChange = onResolutionChange
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        setupMenu()
-    }
 
-    private func setupMenu() {
         if let button = statusItem.button {
             button.image = NSImage(
-                systemSymbolName: "display",
+                systemSymbolName: "macwindow.on.rectangle",
                 accessibilityDescription: "FloatScreen"
             )
         }
+
         rebuildMenu()
     }
 
-    private func rebuildMenu() {
+    func rebuildMenu() {
         let menu = NSMenu()
 
-        let toggleItem = NSMenuItem(
-            title: panel.isVisible ? "Hide Window" : "Show Window",
-            action: #selector(togglePanel),
-            keyEquivalent: ""
+        let newItem = NSMenuItem(
+            title: "New Container",
+            action: #selector(newContainer),
+            keyEquivalent: "n"
         )
-        toggleItem.target = self
-        menu.addItem(toggleItem)
+        newItem.target = self
+        menu.addItem(newItem)
 
         menu.addItem(.separator())
 
-        // Add App submenu
-        let addAppItem = NSMenuItem(title: "Add App", action: nil, keyEquivalent: "")
-        let addAppSubmenu = NSMenu()
-        addAppSubmenu.delegate = self
-        addAppSubmenu.identifier = Self.addAppMenuID
-        addAppItem.submenu = addAppSubmenu
-        menu.addItem(addAppItem)
-
-        // Send Back submenu
-        let sendBackItem = NSMenuItem(title: "Send Back", action: nil, keyEquivalent: "")
-        let sendBackSubmenu = NSMenu()
-        sendBackSubmenu.delegate = self
-        sendBackSubmenu.identifier = Self.sendBackMenuID
-        sendBackItem.submenu = sendBackSubmenu
-        menu.addItem(sendBackItem)
-
-        menu.addItem(.separator())
-
-        let alwaysOnTopItem = NSMenuItem(
-            title: "Always on Top",
-            action: #selector(toggleAlwaysOnTop(_:)),
-            keyEquivalent: ""
-        )
-        alwaysOnTopItem.target = self
-        alwaysOnTopItem.state = isAlwaysOnTop ? .on : .off
-        menu.addItem(alwaysOnTopItem)
-
-        menu.addItem(.separator())
-
-        let resolutionItem = NSMenuItem(title: "Resolution", action: nil, keyEquivalent: "")
-        let resolutionMenu = NSMenu()
-        for (index, res) in resolutions.enumerated() {
-            let item = NSMenuItem(
-                title: res.0,
-                action: #selector(changeResolution(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.tag = index
-            item.state = index == currentResolutionIndex ? .on : .off
-            resolutionMenu.addItem(item)
+        // Open containers
+        if let containers = appDelegate?.containers, !containers.isEmpty {
+            for container in containers {
+                let title = container.pageTitle
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(focusContainer(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = container
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
         }
-        resolutionItem.submenu = resolutionMenu
-        menu.addItem(resolutionItem)
 
+        // Favorites submenu
+        let favItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
+        let favSubmenu = NSMenu()
+        favSubmenu.delegate = self
+        favSubmenu.identifier = Self.favoritesMenuID
+        favItem.submenu = favSubmenu
+        menu.addItem(favItem)
+
+        menu.addItem(.separator())
+
+        // Opacity submenu
         let opacityItem = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
         let opacityMenu = NSMenu()
-        for pct in stride(from: 100, through: 50, by: -10) {
+        for pct in stride(from: 100, through: 30, by: -10) {
             let item = NSMenuItem(
                 title: "\(pct)%",
-                action: #selector(changeOpacity(_:)),
+                action: #selector(setOpacity(_:)),
                 keyEquivalent: ""
             )
             item.target = self
             item.tag = pct
-            item.state = CGFloat(pct) / 100.0 == currentOpacity ? .on : .off
             opacityMenu.addItem(item)
         }
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
+
+        let clickThroughItem = NSMenuItem(
+            title: "Toggle Click-Through",
+            action: #selector(toggleClickThrough),
+            keyEquivalent: ""
+        )
+        clickThroughItem.target = self
+        menu.addItem(clickThroughItem)
+
+        let showHideItem = NSMenuItem(
+            title: "Show/Hide All",
+            action: #selector(toggleAllContainers),
+            keyEquivalent: ""
+        )
+        showHideItem.target = self
+        menu.addItem(showHideItem)
 
         menu.addItem(.separator())
 
@@ -127,91 +106,80 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    // MARK: - NSMenuDelegate (dynamic submenus)
+    // MARK: - NSMenuDelegate (favorites submenu)
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.identifier == Self.favoritesMenuID else { return }
         menu.removeAllItems()
 
-        guard WindowMoverManager.ensureAccessibility() else {
+        for fav in favorites.items {
             let item = NSMenuItem(
-                title: "Grant Accessibility access\u{2026}",
-                action: nil, keyEquivalent: ""
+                title: fav.name,
+                action: #selector(openFavorite(_:)),
+                keyEquivalent: ""
             )
-            item.isEnabled = false
-            menu.addItem(item)
-            return
-        }
-
-        let isAddApp = menu.identifier == Self.addAppMenuID
-        let windows = isAddApp
-            ? windowMover.availableWindows()
-            : windowMover.windowsOnVirtualDisplay()
-
-        if windows.isEmpty {
-            let label = isAddApp ? "No windows available" : "No windows on display"
-            let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-            return
-        }
-
-        let action: Selector = isAddApp
-            ? #selector(moveToVirtualDisplay(_:))
-            : #selector(moveToMainDisplay(_:))
-
-        for entry in windows {
-            let label = entry.title.isEmpty
-                ? entry.appName
-                : "\(entry.appName) \u{2014} \(entry.title)"
-            let item = NSMenuItem(title: label, action: action, keyEquivalent: "")
             item.target = self
-            item.representedObject = Box(entry)
-            if let icon = entry.appIcon {
-                item.image = icon.resizedForMenu()
-            }
+            item.representedObject = fav.urlString
             menu.addItem(item)
         }
+
+        menu.addItem(.separator())
+
+        let addItem = NSMenuItem(
+            title: "Add Current Page\u{2026}",
+            action: #selector(addCurrentToFavorites),
+            keyEquivalent: ""
+        )
+        addItem.target = self
+        menu.addItem(addItem)
     }
 
     // MARK: - Actions
 
-    @objc private func togglePanel() {
-        if panel.isVisible {
-            panel.orderOut(nil)
+    @objc private func newContainer() {
+        _ = appDelegate?.newContainer()
+        rebuildMenu()
+    }
+
+    @objc private func focusContainer(_ sender: NSMenuItem) {
+        guard let container = sender.representedObject as? ContainerWindow else { return }
+        container.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openFavorite(_ sender: NSMenuItem) {
+        guard let urlString = sender.representedObject as? String,
+              let url = URL(string: urlString) else { return }
+        _ = appDelegate?.newContainer(url: url)
+        rebuildMenu()
+    }
+
+    @objc private func addCurrentToFavorites() {
+        guard let container = appDelegate?.containers.last,
+              let url = container.currentURL else { return }
+        let name = container.pageTitle
+        favorites.add(name: name, urlString: url.absoluteString)
+    }
+
+    @objc private func setOpacity(_ sender: NSMenuItem) {
+        let value = CGFloat(sender.tag) / 100.0
+        // Apply to the frontmost container
+        if let container = NSApp.keyWindow as? ContainerWindow {
+            container.setOpacity(value)
         } else {
-            panel.orderFront(nil)
+            appDelegate?.containers.last?.setOpacity(value)
         }
-        rebuildMenu()
     }
 
-    @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
-        isAlwaysOnTop.toggle()
-        panel.updateAlwaysOnTop(isAlwaysOnTop)
-        rebuildMenu()
+    @objc private func toggleClickThrough() {
+        guard let containers = appDelegate?.containers else { return }
+        let anyClickThrough = containers.contains { $0.ignoresMouseEvents }
+        for c in containers {
+            c.setClickThrough(!anyClickThrough)
+        }
     }
 
-    @objc private func changeResolution(_ sender: NSMenuItem) {
-        let index = sender.tag
-        let (_, width, height) = resolutions[index]
-        currentResolutionIndex = index
-        onResolutionChange(width, height)
-        rebuildMenu()
-    }
-
-    @objc private func changeOpacity(_ sender: NSMenuItem) {
-        currentOpacity = CGFloat(sender.tag) / 100.0
-        panel.updateOpacity(currentOpacity)
-        rebuildMenu()
-    }
-
-    @objc private func moveToVirtualDisplay(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? Box<WindowEntry> else { return }
-        windowMover.moveToVirtualDisplay(box.value)
-    }
-
-    @objc private func moveToMainDisplay(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? Box<WindowEntry> else { return }
-        windowMover.moveToMainDisplay(box.value)
+    @objc private func toggleAllContainers() {
+        appDelegate?.toggleAllContainers()
     }
 
     @objc private func quitApp() {

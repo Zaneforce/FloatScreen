@@ -7,7 +7,6 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
-    SWIFT_OBJC_BRIDGING_HEADER: FloatScreen/FloatScreen-Bridging-Header.h
 targets:
   FloatScreen:
     type: application
@@ -23,6 +22,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: FloatScreen/FloatScreen.entitlements
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        ENABLE_HARDENED_RUNTIME: false
         PRODUCT_NAME: FloatScreen
         COMBINE_HIDPI_IMAGES: true
+    dependencies:
+      - framework: WebKit.framework
+        embed: false
