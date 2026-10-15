@@ -61,6 +61,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // Ad blocking
+        let adBlockItem = NSMenuItem(
+            title: "Block Ads",
+            action: #selector(toggleAdBlock(_:)),
+            keyEquivalent: ""
+        )
+        adBlockItem.target = self
+        adBlockItem.state = ContentBlocker.shared.isEnabled ? .on : .off
+        menu.addItem(adBlockItem)
+
+        let disableOnSiteItem = NSMenuItem(
+            title: "Disable Blocking on This Site",
+            action: #selector(disableBlockingOnSite),
+            keyEquivalent: ""
+        )
+        disableOnSiteItem.target = self
+        if let host = activeContainer?.currentURL?.host {
+            disableOnSiteItem.title = ContentBlocker.shared.disabledDomains.contains(host)
+                ? "Re-enable Blocking on \(host)"
+                : "Disable Blocking on \(host)"
+        }
+        menu.addItem(disableOnSiteItem)
+
+        menu.addItem(.separator())
+
         // Opacity submenu
         let opacityItem = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
         let opacityMenu = NSMenu()
@@ -192,6 +217,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for c in containers {
             c.setClickThrough(!anyClickThrough)
         }
+    }
+
+    @objc private func toggleAdBlock(_ sender: NSMenuItem) {
+        ContentBlocker.shared.isEnabled.toggle()
+        rebuildMenu()
+    }
+
+    @objc private func disableBlockingOnSite() {
+        guard let host = activeContainer?.currentURL?.host else { return }
+        var domains = ContentBlocker.shared.disabledDomains
+        if domains.contains(host) {
+            domains.remove(host)
+        } else {
+            domains.insert(host)
+        }
+        ContentBlocker.shared.disabledDomains = domains
+        rebuildMenu()
     }
 
     @objc private func toggleFullscreenFills(_ sender: NSMenuItem) {

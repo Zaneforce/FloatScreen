@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00DB3989C31DF94734656668 /* YouTubeAdSkipper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341022C2576FA685CF7B2B1C /* YouTubeAdSkipper.swift */; };
 		10F6D16747AB84A8880C151C /* ContainerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F124DDA7208C955E461A2A14 /* ContainerState.swift */; };
 		2DF6616FCCA7A3A1AC7DBE28 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34CE4EDB7BF12989B793DC18 /* Favorites.swift */; };
 		45EFB51A26F75E05E1E8EDF4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D43A5143F72B37B16784C75 /* main.swift */; };
 		598444B1D13E1613B4440873 /* GlobalShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F656F09AA08832D1B0ADB8 /* GlobalShortcut.swift */; };
 		6830496109B01F2231FBA0BF /* WebViewConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CCE08656556C96E0316D302 /* WebViewConfig.swift */; };
+		6DB4D27F6BF6CD97E57FB13A /* ContentBlocker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27347B9142698EED99867B4D /* ContentBlocker.swift */; };
 		B36E37D9AC18136459A6BC09 /* ContainerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317EC1223BCB0925805C91EE /* ContainerWindow.swift */; };
 		C2BE976800DCA8241BA104C5 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25ED5740BDA5DFA239BDC2CA /* ToolbarView.swift */; };
 		D64F2F8651492400954CD45C /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A9135A62D56EBFB31FC8631 /* MenuBarController.swift */; };
@@ -23,8 +25,10 @@
 		0D43A5143F72B37B16784C75 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		25ED5740BDA5DFA239BDC2CA /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
 		2692E3309912F5B223F5C409 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		27347B9142698EED99867B4D /* ContentBlocker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlocker.swift; sourceTree = "<group>"; };
 		2A9135A62D56EBFB31FC8631 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		317EC1223BCB0925805C91EE /* ContainerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerWindow.swift; sourceTree = "<group>"; };
+		341022C2576FA685CF7B2B1C /* YouTubeAdSkipper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeAdSkipper.swift; sourceTree = "<group>"; };
 		34CE4EDB7BF12989B793DC18 /* Favorites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Favorites.swift; sourceTree = "<group>"; };
 		78F656F09AA08832D1B0ADB8 /* GlobalShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalShortcut.swift; sourceTree = "<group>"; };
 		7CCE08656556C96E0316D302 /* WebViewConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewConfig.swift; sourceTree = "<group>"; };
@@ -77,6 +81,7 @@
 				2692E3309912F5B223F5C409 /* AppDelegate.swift */,
 				F124DDA7208C955E461A2A14 /* ContainerState.swift */,
 				317EC1223BCB0925805C91EE /* ContainerWindow.swift */,
+				27347B9142698EED99867B4D /* ContentBlocker.swift */,
 				34CE4EDB7BF12989B793DC18 /* Favorites.swift */,
 				78F656F09AA08832D1B0ADB8 /* GlobalShortcut.swift */,
 				AD39781697E2AFD20966E5AE /* Info.plist */,
@@ -84,6 +89,7 @@
 				2A9135A62D56EBFB31FC8631 /* MenuBarController.swift */,
 				25ED5740BDA5DFA239BDC2CA /* ToolbarView.swift */,
 				7CCE08656556C96E0316D302 /* WebViewConfig.swift */,
+				341022C2576FA685CF7B2B1C /* YouTubeAdSkipper.swift */,
 			);
 			path = FloatScreen;
 			sourceTree = "<group>";
@@ -150,11 +156,13 @@
 				F815F4043F393A5040418FBC /* AppDelegate.swift in Sources */,
 				10F6D16747AB84A8880C151C /* ContainerState.swift in Sources */,
 				B36E37D9AC18136459A6BC09 /* ContainerWindow.swift in Sources */,
+				6DB4D27F6BF6CD97E57FB13A /* ContentBlocker.swift in Sources */,
 				2DF6616FCCA7A3A1AC7DBE28 /* Favorites.swift in Sources */,
 				598444B1D13E1613B4440873 /* GlobalShortcut.swift in Sources */,
 				D64F2F8651492400954CD45C /* MenuBarController.swift in Sources */,
 				C2BE976800DCA8241BA104C5 /* ToolbarView.swift in Sources */,
 				6830496109B01F2231FBA0BF /* WebViewConfig.swift in Sources */,
+				00DB3989C31DF94734656668 /* YouTubeAdSkipper.swift in Sources */,
 				45EFB51A26F75E05E1E8EDF4 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

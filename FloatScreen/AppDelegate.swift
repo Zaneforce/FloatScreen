@@ -10,6 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupHiddenMenu()
         globalShortcut = GlobalShortcut { [weak self] in self?.toggleAllContainers() }
+        ContentBlocker.shared.loadRulesIfNeeded()
 
         let savedStates = StatePersistence.load()
         if savedStates.isEmpty {

@@ -33,6 +33,15 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         let ucc = webView.configuration.userContentController
         ucc.addUserScript(script)
         ucc.add(WeakMessageHandler(delegate: self), name: "fullscreen")
+
+        ContentBlocker.shared.apply(to: ucc)
+
+        let ytScript = WKUserScript(
+            source: YouTubeAdSkipper.script,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        ucc.addUserScript(ytScript)
     }
 
     static func navigate(_ webView: WKWebView, to input: String) {
