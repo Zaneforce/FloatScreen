@@ -153,10 +153,53 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // window.open() / OAuth popups need a real child webview so
+        // window.opener and postMessage work for "Sign in with Google" etc.
+        let isWindowOpen = navigationAction.navigationType == .other
+        let hasFeatures = windowFeatures.width != nil || windowFeatures.height != nil
+
+        if isWindowOpen || hasFeatures {
+            return openPopup(configuration: configuration, windowFeatures: windowFeatures)
+        }
+
+        // Plain target=_blank link click: load in the same container
         if let url = navigationAction.request.url {
             webView.load(URLRequest(url: url))
         }
         return nil
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        // OAuth popup called window.close()
+        webView.window?.close()
+    }
+
+    private func openPopup(configuration: WKWebViewConfiguration,
+                            windowFeatures: WKWindowFeatures) -> WKWebView {
+        let w = windowFeatures.width?.doubleValue ?? 500
+        let h = windowFeatures.height?.doubleValue ?? 600
+        let popupRect = NSRect(x: 300, y: 300, width: w, height: h)
+
+        let popupView = WKWebView(frame: .zero, configuration: configuration)
+        popupView.customUserAgent = Self.safariUserAgent
+        popupView.uiDelegate = self
+
+        let popup = NSPanel(
+            contentRect: popupRect,
+            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        popup.title = "Sign In"
+        popup.level = .floating
+        popup.hidesOnDeactivate = false
+        popup.becomesKeyOnlyIfNeeded = false
+        popup.appearance = NSAppearance(named: .darkAqua)
+        popup.contentView = popupView
+        popup.center()
+        popup.orderFront(nil)
+
+        return popupView
     }
 }
 
