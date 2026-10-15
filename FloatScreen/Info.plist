@@ -25,5 +25,9 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2026 FloatScreen. All rights reserved.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>FloatScreen needs camera access so web apps like Google Meet, Slack, and Discord can use your camera.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>FloatScreen needs microphone access so web apps like Google Meet, Slack, and Discord can use your microphone.</string>
 </dict>
 </plist>

@@ -107,6 +107,16 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
     // MARK: - WKUIDelegate
 
     func webView(_ webView: WKWebView,
+                 requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        // Grant the web-level permission; macOS will still show its own
+        // system camera/microphone prompt the first time.
+        decisionHandler(.grant)
+    }
+
+    func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {

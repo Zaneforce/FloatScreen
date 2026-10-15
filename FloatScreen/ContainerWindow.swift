@@ -49,6 +49,11 @@ final class ContainerWindow: NSPanel {
         titleVisibility = .hidden
         contentMinSize = NSSize(width: 320, height: 200)
 
+        // Without this, .nonactivatingPanel only becomes key when a key-view
+        // (like NSTextField) is clicked. WKWebView text inputs need the panel
+        // to be key for typing to work, so always accept key status on click.
+        becomesKeyOnlyIfNeeded = false
+
         let container = HoverContentView(owner: self)
         container.wantsLayer = true
         self.contentView = container
