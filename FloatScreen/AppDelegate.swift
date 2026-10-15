@@ -20,7 +20,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             for state in savedStates {
                 let url = URL(string: state.urlString)
-                let container = ContainerWindow(id: state.id, url: url, state: state)
+                let profileId = state.profileId.flatMap(UUID.init(uuidString:))
+                let profile = profileId.map { ProfileManager.shared.profile(for: $0) }
+                let container = ContainerWindow(id: state.id, url: url, state: state, profile: profile)
                 containers.append(container)
                 container.orderFront(nil)
             }
@@ -38,8 +40,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @discardableResult
-    func newContainer(url: URL? = nil) -> ContainerWindow {
-        let container = ContainerWindow(url: url)
+    func newContainer(url: URL? = nil, profile: Profile? = nil) -> ContainerWindow {
+        let container = ContainerWindow(url: url, profile: profile)
         containers.append(container)
         container.orderFront(nil)
         menuBarController?.rebuildMenu()
@@ -114,7 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleNewContainer() {
-        newContainer()
+        newContainer(profile: ProfileManager.shared.defaultProfile)
     }
 
     @objc private func handleCloseContainer() {

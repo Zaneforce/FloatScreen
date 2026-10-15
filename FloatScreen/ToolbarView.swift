@@ -7,6 +7,7 @@ protocol ToolbarViewDelegate: AnyObject {
     func toolbarDidRequestReload()
     func toolbarDidNavigate(to urlString: String)
     func toolbarDidTogglePin(_ pinned: Bool)
+    func toolbarDidRequestSwitchProfile(relativeTo view: NSView)
 }
 
 final class ToolbarView: NSView {
@@ -20,6 +21,7 @@ final class ToolbarView: NSView {
     private let forwardButton: BarButton
     private let reloadButton: BarButton
     private let pinButton: BarButton
+    private let profileBadge: BarButton
     private var isPinned = true
 
     override init(frame frameRect: NSRect) {
@@ -29,6 +31,7 @@ final class ToolbarView: NSView {
         forwardButton = BarButton()
         reloadButton = BarButton()
         pinButton = BarButton()
+        profileBadge = BarButton()
         super.init(frame: frameRect)
         setup()
     }
@@ -52,6 +55,11 @@ final class ToolbarView: NSView {
         urlField.selectText(nil)
     }
 
+    func setProfile(_ profile: Profile) {
+        profileBadge.title = String(profile.name.prefix(1))
+        profileBadge.contentTintColor = profile.color
+    }
+
     private func setup() {
         wantsLayer = true
         layer?.backgroundColor = NSColor(white: 0.12, alpha: 1.0).cgColor
@@ -69,6 +77,15 @@ final class ToolbarView: NSView {
         configureButton(pinButton, symbol: "pin.fill", action: #selector(pinTapped))
         pinButton.contentTintColor = .controlAccentColor
 
+        profileBadge.title = "P"
+        profileBadge.font = .systemFont(ofSize: 10, weight: .bold)
+        profileBadge.bezelStyle = .inline
+        profileBadge.isBordered = false
+        profileBadge.contentTintColor = .controlAccentColor
+        profileBadge.target = self
+        profileBadge.action = #selector(profileBadgeTapped)
+        addSubview(profileBadge)
+
         urlField.placeholderString = "Search or enter URL"
         urlField.font = .systemFont(ofSize: 11)
         urlField.isBordered = true
@@ -81,7 +98,8 @@ final class ToolbarView: NSView {
         urlField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(urlField)
 
-        let views = [closeButton, backButton, forwardButton, reloadButton, urlField, pinButton] as [NSView]
+        let views = [closeButton, backButton, forwardButton, reloadButton,
+                     profileBadge, urlField, pinButton] as [NSView]
         for v in views { v.translatesAutoresizingMaskIntoConstraints = false }
 
         NSLayoutConstraint.activate([
@@ -105,7 +123,12 @@ final class ToolbarView: NSView {
             reloadButton.widthAnchor.constraint(equalToConstant: 20),
             reloadButton.heightAnchor.constraint(equalToConstant: 16),
 
-            urlField.leadingAnchor.constraint(equalTo: reloadButton.trailingAnchor, constant: 6),
+            profileBadge.leadingAnchor.constraint(equalTo: reloadButton.trailingAnchor, constant: 4),
+            profileBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            profileBadge.widthAnchor.constraint(equalToConstant: 18),
+            profileBadge.heightAnchor.constraint(equalToConstant: 16),
+
+            urlField.leadingAnchor.constraint(equalTo: profileBadge.trailingAnchor, constant: 4),
             urlField.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -6),
             urlField.centerYAnchor.constraint(equalTo: centerYAnchor),
             urlField.heightAnchor.constraint(equalToConstant: 20),
@@ -146,6 +169,10 @@ final class ToolbarView: NSView {
             accessibilityDescription: nil
         )
         delegate?.toolbarDidTogglePin(isPinned)
+    }
+
+    @objc private func profileBadgeTapped() {
+        delegate?.toolbarDidRequestSwitchProfile(relativeTo: profileBadge)
     }
 
     @objc private func urlFieldAction() {

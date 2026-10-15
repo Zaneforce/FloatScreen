@@ -25,20 +25,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func rebuildMenu() {
         let menu = NSMenu()
 
-        let newItem = NSMenuItem(
-            title: "New Container",
-            action: #selector(newContainer),
-            keyEquivalent: "n"
-        )
-        newItem.target = self
+        // New Container submenu per profile
+        let newItem = NSMenuItem(title: "New Container", action: nil, keyEquivalent: "")
+        let newSubmenu = NSMenu()
+        for p in ProfileManager.shared.profiles {
+            let item = NSMenuItem(
+                title: "\(p.emoji) \(p.name)",
+                action: #selector(newContainerWithProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = p.id.uuidString
+            newSubmenu.addItem(item)
+        }
+        newItem.submenu = newSubmenu
         menu.addItem(newItem)
 
         menu.addItem(.separator())
 
-        // Open containers
+        // Open containers (grouped by profile)
         if let containers = appDelegate?.containers, !containers.isEmpty {
             for container in containers {
-                let title = container.pageTitle
+                let badge = container.profile.emoji
+                let title = "\(badge) \(container.pageTitle)"
                 let item = NSMenuItem(
                     title: title,
                     action: #selector(focusContainer(_:)),
@@ -50,6 +59,32 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             menu.addItem(.separator())
         }
+
+        // Profiles management submenu
+        let profilesItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+        let profilesSubmenu = NSMenu()
+        for p in ProfileManager.shared.profiles {
+            let item = NSMenuItem(title: "\(p.emoji) \(p.name)", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            let renameItem = NSMenuItem(title: "Rename\u{2026}", action: #selector(renameProfile(_:)), keyEquivalent: "")
+            renameItem.target = self
+            renameItem.representedObject = p.id.uuidString
+            sub.addItem(renameItem)
+
+            let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteProfile(_:)), keyEquivalent: "")
+            deleteItem.target = self
+            deleteItem.representedObject = p.id.uuidString
+            sub.addItem(deleteItem)
+
+            item.submenu = sub
+            profilesSubmenu.addItem(item)
+        }
+        profilesSubmenu.addItem(.separator())
+        let addProfileItem = NSMenuItem(title: "Add Profile\u{2026}", action: #selector(addProfile), keyEquivalent: "")
+        addProfileItem.target = self
+        profilesSubmenu.addItem(addProfileItem)
+        profilesItem.submenu = profilesSubmenu
+        menu.addItem(profilesItem)
 
         // Favorites submenu
         let favItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
@@ -177,8 +212,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Actions
 
-    @objc private func newContainer() {
-        _ = appDelegate?.newContainer()
+    @objc private func newContainerWithProfile(_ sender: NSMenuItem) {
+        guard let idStr = sender.representedObject as? String,
+              let id = UUID(uuidString: idStr) else { return }
+        let profile = ProfileManager.shared.profile(for: id)
+        _ = appDelegate?.newContainer(profile: profile)
         rebuildMenu()
     }
 
@@ -240,6 +278,58 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let container = activeContainer else { return }
         container.fullscreenFillsContainer.toggle()
         container.syncFullscreenFlag()
+        rebuildMenu()
+    }
+
+    @objc private func addProfile() {
+        let alert = NSAlert()
+        alert.messageText = "New Profile"
+        alert.informativeText = "Enter a name for the new profile:"
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.placeholderString = "Profile name"
+        alert.accessoryView = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.isEmpty ? "Profile" : input.stringValue
+        let colors = ["#5E9CFF", "#FF6B6B", "#4ECB71", "#FFB347", "#C77DFF"]
+        let color = colors.randomElement()!
+        _ = ProfileManager.shared.add(name: name, colorHex: color, emoji: "🌐")
+        rebuildMenu()
+    }
+
+    @objc private func renameProfile(_ sender: NSMenuItem) {
+        guard let idStr = sender.representedObject as? String,
+              let id = UUID(uuidString: idStr) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Profile"
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.stringValue = ProfileManager.shared.profile(for: id).name
+        alert.accessoryView = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        ProfileManager.shared.rename(id, to: input.stringValue)
+        rebuildMenu()
+    }
+
+    @objc private func deleteProfile(_ sender: NSMenuItem) {
+        guard let idStr = sender.representedObject as? String,
+              let id = UUID(uuidString: idStr) else { return }
+        let profile = ProfileManager.shared.profile(for: id)
+        let alert = NSAlert()
+        alert.messageText = "Delete \"\(profile.name)\"?"
+        alert.informativeText = "This will close all containers using this profile and delete its browsing data."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Close containers using this profile
+        let toClose = appDelegate?.containers.filter { $0.profile.id == id } ?? []
+        for c in toClose { c.close() }
+
+        Task { await ProfileManager.shared.delete(id) }
         rebuildMenu()
     }
 

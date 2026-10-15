@@ -2,24 +2,33 @@ import AppKit
 import WebKit
 
 final class ContainerWindow: NSPanel {
-    let webView: WKWebView
+    private(set) var webView: WKWebView
     let toolbarView: ToolbarView
-    let webConfig: WebViewConfig
+    var webConfig: WebViewConfig
     let containerID: UUID
+    private(set) var profile: Profile
 
     private var toolbarHeightConstraint: NSLayoutConstraint!
     private var isToolbarAutoHidden = false
-    private var hoverTrackingArea: NSTrackingArea?
+    private var accentBar: NSView!
 
     var fullscreenFillsContainer = true
     private var isInContainerFullscreen = false
     private var toolbarWasVisibleBeforeFullscreen = true
 
-    init(id: UUID = UUID(), url: URL? = nil, state: ContainerState? = nil) {
+    private var webViewTopConstraint: NSLayoutConstraint!
+    private var containerView: NSView!
+
+    init(id: UUID = UUID(), url: URL? = nil, state: ContainerState? = nil,
+         profile: Profile? = nil) {
         self.containerID = id
+        self.profile = profile ?? ProfileManager.shared.defaultProfile
         self.webConfig = WebViewConfig()
         self.toolbarView = ToolbarView()
-        self.webView = WKWebView(frame: .zero, configuration: WebViewConfig.makeConfiguration())
+        self.webView = WKWebView(
+            frame: .zero,
+            configuration: WebViewConfig.makeConfiguration(profile: self.profile)
+        )
 
         let rect: NSRect
         if let s = state {
@@ -52,15 +61,18 @@ final class ContainerWindow: NSPanel {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         contentMinSize = NSSize(width: 320, height: 200)
-
-        // Without this, .nonactivatingPanel only becomes key when a key-view
-        // (like NSTextField) is clicked. WKWebView text inputs need the panel
-        // to be key for typing to work, so always accept key status on click.
         becomesKeyOnlyIfNeeded = false
 
         let container = HoverContentView(owner: self)
         container.wantsLayer = true
         self.contentView = container
+        self.containerView = container
+
+        accentBar = NSView()
+        accentBar.wantsLayer = true
+        accentBar.layer?.backgroundColor = self.profile.color.cgColor
+        accentBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(accentBar)
 
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(toolbarView)
@@ -71,20 +83,27 @@ final class ContainerWindow: NSPanel {
         toolbarHeightConstraint = toolbarView.heightAnchor.constraint(
             equalToConstant: ToolbarView.height
         )
+        webViewTopConstraint = webView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor)
 
         NSLayoutConstraint.activate([
-            toolbarView.topAnchor.constraint(equalTo: container.topAnchor),
+            accentBar.topAnchor.constraint(equalTo: container.topAnchor),
+            accentBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            accentBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            accentBar.heightAnchor.constraint(equalToConstant: 2),
+
+            toolbarView.topAnchor.constraint(equalTo: accentBar.bottomAnchor),
             toolbarView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             toolbarView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             toolbarHeightConstraint,
 
-            webView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
+            webViewTopConstraint,
             webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
         toolbarView.delegate = self
+        toolbarView.setProfile(self.profile)
         webConfig.attach(to: webView, container: self)
 
         if let s = state {
@@ -121,6 +140,41 @@ final class ContainerWindow: NSPanel {
 
     func setClickThrough(_ enabled: Bool) {
         ignoresMouseEvents = enabled
+    }
+
+    // MARK: - Profile Switching
+
+    func switchProfile(to newProfile: Profile) {
+        let currentURL = webView.url
+        self.profile = newProfile
+        accentBar.layer?.backgroundColor = newProfile.color.cgColor
+        toolbarView.setProfile(newProfile)
+
+        webView.removeFromSuperview()
+        webViewTopConstraint.isActive = false
+
+        let newWebView = WKWebView(
+            frame: .zero,
+            configuration: WebViewConfig.makeConfiguration(profile: newProfile)
+        )
+        newWebView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(newWebView)
+
+        webViewTopConstraint = newWebView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor)
+        NSLayoutConstraint.activate([
+            webViewTopConstraint,
+            newWebView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            newWebView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            newWebView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+        ])
+
+        self.webView = newWebView
+        self.webConfig = WebViewConfig()
+        webConfig.attach(to: newWebView, container: self)
+
+        if let url = currentURL {
+            newWebView.load(URLRequest(url: url))
+        }
     }
 
     // MARK: - Container Fullscreen
@@ -201,7 +255,8 @@ final class ContainerWindow: NSPanel {
             opacity: Double(alphaValue),
             isAlwaysOnTop: level == .floating,
             isToolbarAutoHidden: isToolbarAutoHidden,
-            fullscreenFillsContainer: fullscreenFillsContainer
+            fullscreenFillsContainer: fullscreenFillsContainer,
+            profileId: profile.id.uuidString
         )
     }
 }
@@ -220,6 +275,28 @@ extension ContainerWindow: ToolbarViewDelegate {
 
     func toolbarDidTogglePin(_ pinned: Bool) {
         setAlwaysOnTop(pinned)
+    }
+
+    func toolbarDidRequestSwitchProfile(relativeTo view: NSView) {
+        let menu = NSMenu()
+        for p in ProfileManager.shared.profiles {
+            let item = NSMenuItem(title: "\(p.emoji) \(p.name)",
+                                  action: #selector(profileMenuItemSelected(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = p.id.uuidString
+            if p.id == profile.id { item.state = .on }
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height), in: view)
+    }
+
+    @objc private func profileMenuItemSelected(_ sender: NSMenuItem) {
+        guard let idStr = sender.representedObject as? String,
+              let id = UUID(uuidString: idStr) else { return }
+        let newProfile = ProfileManager.shared.profile(for: id)
+        guard newProfile.id != profile.id else { return }
+        switchProfile(to: newProfile)
     }
 }
 

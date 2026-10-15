@@ -7,9 +7,9 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
 
     static let safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-    static func makeConfiguration() -> WKWebViewConfiguration {
+    static func makeConfiguration(profile: Profile = .personal) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
+        config.websiteDataStore = ProfileManager.dataStore(for: profile)
 
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.isElementFullscreenEnabled = true
