@@ -10,6 +10,7 @@ struct ContainerState: Codable {
     var opacity: Double
     var isAlwaysOnTop: Bool
     var isToolbarAutoHidden: Bool
+    var fullscreenFillsContainer: Bool?
 }
 
 final class StatePersistence {

@@ -77,6 +77,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
 
+        let fsItem = NSMenuItem(
+            title: "Fullscreen Fills Container",
+            action: #selector(toggleFullscreenFills(_:)),
+            keyEquivalent: ""
+        )
+        fsItem.target = self
+        if let active = activeContainer {
+            fsItem.state = active.fullscreenFillsContainer ? .on : .off
+        }
+        menu.addItem(fsItem)
+
         let clickThroughItem = NSMenuItem(
             title: "Toggle Click-Through",
             action: #selector(toggleClickThrough),
@@ -134,6 +145,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(addItem)
     }
 
+    private var activeContainer: ContainerWindow? {
+        NSApp.keyWindow as? ContainerWindow
+            ?? appDelegate?.containers.last(where: { $0.isVisible })
+    }
+
     // MARK: - Actions
 
     @objc private func newContainer() {
@@ -176,6 +192,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for c in containers {
             c.setClickThrough(!anyClickThrough)
         }
+    }
+
+    @objc private func toggleFullscreenFills(_ sender: NSMenuItem) {
+        guard let container = activeContainer else { return }
+        container.fullscreenFillsContainer.toggle()
+        container.syncFullscreenFlag()
+        rebuildMenu()
     }
 
     @objc private func toggleAllContainers() {

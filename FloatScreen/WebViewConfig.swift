@@ -1,6 +1,7 @@
 import WebKit
 
-final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
+                           WKDownloadDelegate, WKScriptMessageHandler {
     private weak var webView: WKWebView?
     private weak var containerWindow: ContainerWindow?
 
@@ -23,6 +24,15 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
         webView.uiDelegate = self
         webView.customUserAgent = Self.safariUserAgent
         webView.allowsBackForwardNavigationGestures = true
+
+        let script = WKUserScript(
+            source: Self.fullscreenScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        let ucc = webView.configuration.userContentController
+        ucc.addUserScript(script)
+        ucc.add(WeakMessageHandler(delegate: self), name: "fullscreen")
     }
 
     static func navigate(_ webView: WKWebView, to input: String) {
@@ -44,14 +54,31 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
         }
     }
 
+    // MARK: - WKScriptMessageHandler
+
+    func userContentController(_ userContentController: WKUserContentController,
+                                didReceive message: WKScriptMessage) {
+        guard message.name == "fullscreen",
+              let body = message.body as? [String: String],
+              let action = body["action"] else { return }
+
+        if action == "enter" {
+            containerWindow?.enterContainerFullscreen()
+        } else if action == "exit" {
+            containerWindow?.exitContainerFullscreen()
+        }
+    }
+
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         containerWindow?.webViewDidUpdate()
+        containerWindow?.syncFullscreenFlag()
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         containerWindow?.webViewDidUpdate()
+        containerWindow?.exitContainerFullscreen()
     }
 
     func webView(_ webView: WKWebView,
@@ -91,7 +118,6 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
         var destination = downloadsURL.appendingPathComponent(suggestedFilename)
 
-        // Avoid overwriting
         var counter = 1
         let name = destination.deletingPathExtension().lastPathComponent
         let ext = destination.pathExtension
@@ -111,8 +137,6 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
                  initiatedByFrame frame: WKFrameInfo,
                  type: WKMediaCaptureType,
                  decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        // Grant the web-level permission; macOS will still show its own
-        // system camera/microphone prompt the first time.
         decisionHandler(.grant)
     }
 
@@ -120,10 +144,128 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownl
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // target=_blank: open in the same container
         if let url = navigationAction.request.url {
             webView.load(URLRequest(url: url))
         }
         return nil
+    }
+}
+
+// MARK: - Fullscreen-in-Container Script
+
+extension WebViewConfig {
+    static let fullscreenScript = """
+    (function() {
+        'use strict';
+        if (window.__fsInit) return;
+        window.__fsInit = true;
+        window.__fsFake = true;
+
+        var _el = null;
+
+        var s = document.createElement('style');
+        s.textContent = '.__fs_fill{position:fixed!important;top:0!important;left:0!important;' +
+            'width:100vw!important;height:100vh!important;z-index:2147483647!important;' +
+            'background:#000!important;margin:0!important;padding:0!important;' +
+            'border:none!important;transform:none!important;object-fit:contain!important;}';
+        (document.head || document.documentElement).appendChild(s);
+
+        var _reqFS = Element.prototype.requestFullscreen;
+        var _reqWK = Element.prototype.webkitRequestFullscreen;
+        var _reqWK2 = Element.prototype.webkitRequestFullScreen;
+        var _exitFS = Document.prototype.exitFullscreen;
+        var _exitWK = Document.prototype.webkitExitFullscreen;
+        var _exitWK2 = Document.prototype.webkitCancelFullScreen;
+
+        function fire(t) {
+            t.dispatchEvent(new Event('fullscreenchange', {bubbles:true}));
+            t.dispatchEvent(new Event('webkitfullscreenchange', {bubbles:true}));
+        }
+
+        function enter(el) {
+            if (_el) exit();
+            _el = el;
+            el.classList.add('__fs_fill');
+            fire(el); fire(document);
+            try { window.webkit.messageHandlers.fullscreen.postMessage({action:'enter'}); } catch(e) {}
+        }
+
+        function exit() {
+            if (!_el) return;
+            var el = _el;
+            _el = null;
+            el.classList.remove('__fs_fill');
+            fire(el); fire(document);
+            try { window.webkit.messageHandlers.fullscreen.postMessage({action:'exit'}); } catch(e) {}
+        }
+
+        Element.prototype.requestFullscreen = function(o) {
+            if (!window.__fsFake) return _reqFS ? _reqFS.call(this, o) : Promise.resolve();
+            enter(this); return Promise.resolve();
+        };
+        Element.prototype.webkitRequestFullscreen = function() {
+            if (!window.__fsFake) { if (_reqWK) _reqWK.call(this); return; }
+            enter(this);
+        };
+        Element.prototype.webkitRequestFullScreen = function() {
+            if (!window.__fsFake) { if (_reqWK2) _reqWK2.call(this); return; }
+            enter(this);
+        };
+
+        Document.prototype.exitFullscreen = function() {
+            if (!window.__fsFake) return _exitFS ? _exitFS.call(this) : Promise.resolve();
+            exit(); return Promise.resolve();
+        };
+        Document.prototype.webkitExitFullscreen = function() {
+            if (!window.__fsFake) { if (_exitWK) _exitWK.call(this); return; }
+            exit();
+        };
+        Document.prototype.webkitCancelFullScreen = function() {
+            if (!window.__fsFake) { if (_exitWK2) _exitWK2.call(this); return; }
+            exit();
+        };
+
+        Object.defineProperty(document, 'fullscreenElement', {
+            get: function() { return window.__fsFake ? _el : null; }, configurable: true
+        });
+        Object.defineProperty(document, 'webkitFullscreenElement', {
+            get: function() { return window.__fsFake ? _el : null; }, configurable: true
+        });
+        Object.defineProperty(document, 'webkitCurrentFullScreenElement', {
+            get: function() { return window.__fsFake ? _el : null; }, configurable: true
+        });
+        Object.defineProperty(document, 'fullscreenEnabled', {
+            get: function() { return true; }, configurable: true
+        });
+        Object.defineProperty(document, 'webkitFullscreenEnabled', {
+            get: function() { return true; }, configurable: true
+        });
+        Object.defineProperty(document, 'webkitIsFullScreen', {
+            get: function() { return _el !== null; }, configurable: true
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && _el) {
+                e.preventDefault();
+                e.stopPropagation();
+                exit();
+            }
+        }, true);
+    })();
+    """
+}
+
+// Weak proxy to avoid the retain cycle:
+// WKUserContentController retains the handler strongly.
+private class WeakMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+
+    init(delegate: WKScriptMessageHandler) {
+        self.delegate = delegate
+    }
+
+    func userContentController(_ ucc: WKUserContentController,
+                                didReceive message: WKScriptMessage) {
+        delegate?.userContentController(ucc, didReceive: message)
     }
 }

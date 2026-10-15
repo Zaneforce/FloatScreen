@@ -11,6 +11,10 @@ final class ContainerWindow: NSPanel {
     private var isToolbarAutoHidden = false
     private var hoverTrackingArea: NSTrackingArea?
 
+    var fullscreenFillsContainer = true
+    private var isInContainerFullscreen = false
+    private var toolbarWasVisibleBeforeFullscreen = true
+
     init(id: UUID = UUID(), url: URL? = nil, state: ContainerState? = nil) {
         self.containerID = id
         self.webConfig = WebViewConfig()
@@ -87,6 +91,7 @@ final class ContainerWindow: NSPanel {
             alphaValue = CGFloat(s.opacity)
             if !s.isAlwaysOnTop { level = .normal }
             if s.isToolbarAutoHidden { setToolbarAutoHidden(true, animated: false) }
+            fullscreenFillsContainer = s.fullscreenFillsContainer ?? true
         }
 
         if let url {
@@ -116,6 +121,32 @@ final class ContainerWindow: NSPanel {
 
     func setClickThrough(_ enabled: Bool) {
         ignoresMouseEvents = enabled
+    }
+
+    // MARK: - Container Fullscreen
+
+    func syncFullscreenFlag() {
+        let flag = fullscreenFillsContainer ? "true" : "false"
+        webView.evaluateJavaScript("window.__fsFake = \(flag)", completionHandler: nil)
+    }
+
+    func enterContainerFullscreen() {
+        guard !isInContainerFullscreen else { return }
+        isInContainerFullscreen = true
+        toolbarWasVisibleBeforeFullscreen = !toolbarView.isHidden
+
+        toolbarHeightConstraint.constant = 0
+        toolbarView.isHidden = true
+    }
+
+    func exitContainerFullscreen() {
+        guard isInContainerFullscreen else { return }
+        isInContainerFullscreen = false
+
+        if toolbarWasVisibleBeforeFullscreen && !isToolbarAutoHidden {
+            toolbarView.isHidden = false
+            toolbarHeightConstraint.constant = ToolbarView.height
+        }
     }
 
     // MARK: - Toolbar Auto-hide
@@ -169,7 +200,8 @@ final class ContainerWindow: NSPanel {
             height: Double(f.height),
             opacity: Double(alphaValue),
             isAlwaysOnTop: level == .floating,
-            isToolbarAutoHidden: isToolbarAutoHidden
+            isToolbarAutoHidden: isToolbarAutoHidden,
+            fullscreenFillsContainer: fullscreenFillsContainer
         )
     }
 }
