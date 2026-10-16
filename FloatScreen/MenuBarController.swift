@@ -289,6 +289,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         showHideItem.target = self
         menu.addItem(showHideItem)
 
+        let showAllItem = NSMenuItem(
+            title: "Show All Containers",
+            action: #selector(showAllContainers),
+            keyEquivalent: ""
+        )
+        showAllItem.target = self
+        menu.addItem(showAllItem)
+
         menu.addItem(.separator())
 
         let reopenItem = NSMenuItem(
@@ -595,6 +603,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func toggleAllContainers() {
         appDelegate?.toggleAllContainers()
+    }
+
+    @objc private func showAllContainers() {
+        appDelegate?.showAllContainers()
     }
 
     @objc private func quitApp() {

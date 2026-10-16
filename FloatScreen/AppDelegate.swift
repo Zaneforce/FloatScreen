@@ -139,7 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubbles.removeAll { $0 === bubble }
         containers.removeAll { $0 === container }
         bubble.orderOut(nil)
-        container.close()
+        container.cleanupAndClose()
 
         menuBarController?.rebuildMenu()
     }
@@ -176,6 +176,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Window Close
 
+    func showAllContainers() {
+        let nonMinimized = containers.filter { c in
+            !bubbles.contains { $0.container === c }
+        }
+        for c in nonMinimized { c.orderFront(nil) }
+        for b in bubbles { b.orderFront(nil) }
+        NSApp.activate(ignoringOtherApps: true)
+        nonMinimized.last?.makeKeyAndOrderFront(nil)
+    }
+
     @objc private func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? ContainerWindow else { return }
         let isMinimized = bubbles.contains { $0.container === window }
@@ -183,6 +193,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let state = window.captureState()
             addToRecentlyClosed(state)
         }
+        // Stop media on close
+        window.webView.evaluateJavaScript(
+            "document.querySelectorAll('video,audio').forEach(function(m){m.pause()})",
+            completionHandler: nil
+        )
         containers.removeAll { $0 === window }
         menuBarController?.rebuildMenu()
     }
@@ -270,7 +285,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleCloseContainer() {
-        activeContainer?.close()
+        activeContainer?.cleanupAndClose()
     }
 
     @objc private func handleReopenClosed() {

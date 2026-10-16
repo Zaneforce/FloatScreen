@@ -177,6 +177,19 @@ final class ContainerWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // Escape must never hide/close the panel. Exit fake fullscreen if active,
+    // otherwise forward to the web page (e.g. close a dialog).
+    override func cancelOperation(_ sender: Any?) {
+        if isInContainerFullscreen {
+            webView.evaluateJavaScript(
+                "document.fullscreenElement ? document.exitFullscreen() : null",
+                completionHandler: nil
+            )
+            exitContainerFullscreen()
+        }
+        // Don't call super — that would close/hide the panel
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
             if !NSApp.isActive {
@@ -247,6 +260,17 @@ final class ContainerWindow: NSPanel {
 
     func setClickThrough(_ enabled: Bool) {
         ignoresMouseEvents = enabled
+    }
+
+    func cleanupAndClose() {
+        webView.evaluateJavaScript(
+            "document.querySelectorAll('video,audio').forEach(function(m){m.pause()})",
+            completionHandler: nil
+        )
+        webView.configuration.userContentController.removeAllScriptMessageHandlers()
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        close()
     }
 
     func syncVisibilityPolyfill() {
@@ -499,7 +523,7 @@ final class ContainerWindow: NSPanel {
 // MARK: - ToolbarViewDelegate
 
 extension ContainerWindow: ToolbarViewDelegate {
-    func toolbarDidRequestClose() { close() }
+    func toolbarDidRequestClose() { cleanupAndClose() }
     func toolbarDidRequestMinimize() {
         (NSApp.delegate as? AppDelegate)?.minimizeToBubble(self)
     }

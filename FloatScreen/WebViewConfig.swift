@@ -328,7 +328,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         popupView.customUserAgent = Self.desktopUserAgent
         popupView.uiDelegate = self
 
-        let popup = NSPanel(
+        let popup = PopupPanel(
             contentRect: popupRect,
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
@@ -693,6 +693,11 @@ extension WebViewConfig {
         }, true);
     })();
     """
+}
+
+// NSPanel that doesn't close on Escape
+private class PopupPanel: NSPanel {
+    override func cancelOperation(_ sender: Any?) {}
 }
 
 // Weak proxy to avoid the retain cycle:
