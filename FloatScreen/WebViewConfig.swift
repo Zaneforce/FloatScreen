@@ -106,6 +106,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         webView.uiDelegate = self
         Self.applyUserAgent(to: webView, mobile: container.isMobileMode)
         webView.allowsBackForwardNavigationGestures = true
+        if #available(macOS 13.3, *) { webView.isInspectable = true }
 
         let script = WKUserScript(
             source: Self.fullscreenScript,
@@ -362,7 +363,11 @@ extension WebViewConfig {
         s.textContent = '.__fs_fill{position:fixed!important;top:0!important;left:0!important;' +
             'width:100vw!important;height:100vh!important;z-index:2147483647!important;' +
             'background:#000!important;margin:0!important;padding:0!important;' +
-            'border:none!important;transform:none!important;object-fit:contain!important;}';
+            'border:none!important;transform:none!important;object-fit:contain!important;}' +
+            '.__fs_exit_btn{position:fixed!important;top:8px!important;right:8px!important;' +
+            'z-index:2147483647!important;background:rgba(0,0,0,0.7)!important;color:#fff!important;' +
+            'border:none!important;border-radius:4px!important;padding:4px 12px!important;' +
+            'font:13px -apple-system,sans-serif!important;cursor:pointer!important;}';
         (document.head || document.documentElement).appendChild(s);
 
         var _reqFS = Element.prototype.requestFullscreen;
@@ -371,6 +376,10 @@ extension WebViewConfig {
         var _exitFS = Document.prototype.exitFullscreen;
         var _exitWK = Document.prototype.webkitExitFullscreen;
         var _exitWK2 = Document.prototype.webkitCancelFullScreen;
+        var _vidEnterFS = HTMLVideoElement.prototype.webkitEnterFullscreen;
+        var _vidEnterFS2 = HTMLVideoElement.prototype.webkitEnterFullScreen;
+        var _vidExitFS = HTMLVideoElement.prototype.webkitExitFullscreen;
+        var _vidExitFS2 = HTMLVideoElement.prototype.webkitExitFullScreen;
 
         function fire(t) {
             t.dispatchEvent(new Event('fullscreenchange', {bubbles:true}));
@@ -385,6 +394,11 @@ extension WebViewConfig {
             if (el.tagName === 'VIDEO') {
                 el.dispatchEvent(new Event('webkitbeginfullscreen'));
             }
+            if (window.__fsOrientation) {
+                window.__fsOrientation._angle = 90;
+                window.__fsOrientation._type = 'landscape-primary';
+                window.__fsOrientation.dispatchEvent(new Event('change'));
+            }
             try { window.webkit.messageHandlers.fullscreen.postMessage({action:'enter'}); } catch(e) {}
         }
 
@@ -393,9 +407,16 @@ extension WebViewConfig {
             var el = _el;
             _el = null;
             el.classList.remove('__fs_fill');
+            var exitBtn = document.getElementById('__fs_exit_btn');
+            if (exitBtn) exitBtn.remove();
             fire(el); fire(document);
             if (el.tagName === 'VIDEO') {
                 el.dispatchEvent(new Event('webkitendfullscreen'));
+            }
+            if (window.__fsOrientation) {
+                window.__fsOrientation._angle = 0;
+                window.__fsOrientation._type = 'portrait-primary';
+                window.__fsOrientation.dispatchEvent(new Event('change'));
             }
             try { window.webkit.messageHandlers.fullscreen.postMessage({action:'exit'}); } catch(e) {}
         }
@@ -413,7 +434,6 @@ extension WebViewConfig {
             if (!window.__fsFake) { if (_reqWK2) _reqWK2.call(this); return; }
             enter(this);
         };
-
         Document.prototype.exitFullscreen = function() {
             if (!window.__fsFake) return _exitFS ? _exitFS.call(this) : Promise.resolve();
             exit(); return Promise.resolve();
@@ -427,12 +447,7 @@ extension WebViewConfig {
             exit();
         };
 
-        // iOS-style video fullscreen API (m.youtube.com uses this)
-        var _vidEnterFS = HTMLVideoElement.prototype.webkitEnterFullscreen;
-        var _vidEnterFS2 = HTMLVideoElement.prototype.webkitEnterFullScreen;
-        var _vidExitFS = HTMLVideoElement.prototype.webkitExitFullscreen;
-        var _vidExitFS2 = HTMLVideoElement.prototype.webkitExitFullScreen;
-
+        // iOS-style video fullscreen API
         HTMLVideoElement.prototype.webkitEnterFullscreen = function() {
             if (!window.__fsFake) { if (_vidEnterFS) _vidEnterFS.call(this); return; }
             enter(this);
@@ -449,13 +464,44 @@ extension WebViewConfig {
             if (!window.__fsFake) { if (_vidExitFS2) _vidExitFS2.call(this); return; }
             exit();
         };
-
         Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsFullscreen', {
             get: function() { return true; }, configurable: true
         });
         Object.defineProperty(HTMLVideoElement.prototype, 'webkitDisplayingFullscreen', {
             get: function() { return _el === this; }, configurable: true
         });
+
+        // Screen Orientation API polyfill — YouTube mobile calls
+        // screen.orientation.lock('landscape') and aborts on rejection
+        var _fakeOrientation = {
+            _angle: 0, _type: 'portrait-primary', _listeners: [],
+            get angle() { return this._angle; },
+            get type() { return this._type; },
+            lock: function() { return Promise.resolve(); },
+            unlock: function() {},
+            addEventListener: function(t, fn) { this._listeners.push({t:t,fn:fn}); },
+            removeEventListener: function(t, fn) {
+                this._listeners = this._listeners.filter(function(l) { return l.fn !== fn; });
+            },
+            dispatchEvent: function(e) {
+                this._listeners.forEach(function(l) { if (l.t === e.type) l.fn(e); });
+            }
+        };
+        window.__fsOrientation = _fakeOrientation;
+        try {
+            Object.defineProperty(screen, 'orientation', {
+                get: function() { return _fakeOrientation; }, configurable: true
+            });
+        } catch(e) {}
+
+        // Touch support for mobile mode — YouTube checks this to decide player type
+        if (navigator.maxTouchPoints === 0) {
+            try {
+                Object.defineProperty(navigator, 'maxTouchPoints', {
+                    get: function() { return 5; }, configurable: true
+                });
+            } catch(e) {}
+        }
 
         // Document fullscreen properties
         Object.defineProperty(document, 'fullscreenElement', {
@@ -484,6 +530,33 @@ extension WebViewConfig {
                 exit();
             }
         }, true);
+
+        // "Fill Video" — callable from native via evaluateJavaScript
+        window.__fsFillVideo = function() {
+            var videos = document.querySelectorAll('video');
+            var best = null, bestArea = 0;
+            videos.forEach(function(v) {
+                var r = v.getBoundingClientRect();
+                var area = r.width * r.height;
+                if (area > bestArea && !v.paused) { best = v; bestArea = area; }
+            });
+            if (!best) {
+                videos.forEach(function(v) {
+                    var r = v.getBoundingClientRect();
+                    var area = r.width * r.height;
+                    if (area > bestArea) { best = v; bestArea = area; }
+                });
+            }
+            if (best) {
+                enter(best);
+                var btn = document.createElement('button');
+                btn.id = '__fs_exit_btn';
+                btn.className = '__fs_exit_btn';
+                btn.textContent = 'Exit';
+                btn.onclick = function() { exit(); };
+                document.body.appendChild(btn);
+            }
+        };
     })();
     """
 }

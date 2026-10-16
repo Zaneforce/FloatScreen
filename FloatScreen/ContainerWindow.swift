@@ -519,6 +519,10 @@ extension ContainerWindow: ToolbarViewDelegate {
         setMobileMode(!isMobileMode)
     }
 
+    func toolbarDidRequestFillVideo() {
+        webView.evaluateJavaScript("window.__fsFillVideo && window.__fsFillVideo()", completionHandler: nil)
+    }
+
     func toolbarDidRequestSwitchProfile(relativeTo view: NSView) {
         let menu = NSMenu()
         for p in ProfileManager.shared.profiles {

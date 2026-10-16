@@ -249,6 +249,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(NSMenuItem(title: "Actual Size",
                                     action: #selector(handleZoomReset),
                                     keyEquivalent: "0"))
+        let fillItem = NSMenuItem(title: "Fill Video",
+                                  action: #selector(handleFillVideo),
+                                  keyEquivalent: "f")
+        fillItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(fillItem)
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
 
@@ -302,6 +307,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleZoomReset() {
         activeContainer?.zoomReset()
+    }
+
+    @objc private func handleFillVideo() {
+        activeContainer?.toolbarDidRequestFillVideo()
     }
 }
 

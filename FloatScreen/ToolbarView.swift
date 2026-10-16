@@ -9,6 +9,7 @@ protocol ToolbarViewDelegate: AnyObject {
     func toolbarDidNavigate(to urlString: String)
     func toolbarDidTogglePin(_ pinned: Bool)
     func toolbarDidToggleMobileMode()
+    func toolbarDidRequestFillVideo()
     func toolbarDidRequestSwitchProfile(relativeTo view: NSView)
 }
 
@@ -25,6 +26,7 @@ final class ToolbarView: NSView {
     private let reloadButton: BarButton
     private let pinButton: BarButton
     private let mobileButton: BarButton
+    private let fillVideoButton: BarButton
     private let profileBadge: BarButton
     private var isPinned = true
 
@@ -37,6 +39,7 @@ final class ToolbarView: NSView {
         reloadButton = BarButton()
         pinButton = BarButton()
         mobileButton = BarButton()
+        fillVideoButton = BarButton()
         profileBadge = BarButton()
         super.init(frame: frameRect)
         setup()
@@ -146,6 +149,9 @@ final class ToolbarView: NSView {
         configureButton(mobileButton, symbol: "iphone.slash", action: #selector(mobileTapped))
         mobileButton.contentTintColor = .secondaryLabelColor
 
+        configureButton(fillVideoButton, symbol: "arrow.up.left.and.arrow.down.right", action: #selector(fillVideoTapped))
+        fillVideoButton.toolTip = "Fill video (Cmd+Shift+F)"
+
         profileBadge.title = "P"
         profileBadge.font = .systemFont(ofSize: 10, weight: .bold)
         profileBadge.bezelStyle = .inline
@@ -168,7 +174,7 @@ final class ToolbarView: NSView {
         addSubview(urlField)
 
         let views = [closeButton, minimizeButton, backButton, forwardButton, reloadButton,
-                     profileBadge, urlField, mobileButton, pinButton] as [NSView]
+                     profileBadge, urlField, fillVideoButton, mobileButton, pinButton] as [NSView]
         for v in views { v.translatesAutoresizingMaskIntoConstraints = false }
 
         NSLayoutConstraint.activate([
@@ -203,9 +209,14 @@ final class ToolbarView: NSView {
             profileBadge.heightAnchor.constraint(equalToConstant: 16),
 
             urlField.leadingAnchor.constraint(equalTo: profileBadge.trailingAnchor, constant: 4),
-            urlField.trailingAnchor.constraint(equalTo: mobileButton.leadingAnchor, constant: -4),
+            urlField.trailingAnchor.constraint(equalTo: fillVideoButton.leadingAnchor, constant: -4),
             urlField.centerYAnchor.constraint(equalTo: centerYAnchor),
             urlField.heightAnchor.constraint(equalToConstant: 20),
+
+            fillVideoButton.trailingAnchor.constraint(equalTo: mobileButton.leadingAnchor, constant: -2),
+            fillVideoButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            fillVideoButton.widthAnchor.constraint(equalToConstant: 20),
+            fillVideoButton.heightAnchor.constraint(equalToConstant: 16),
 
             mobileButton.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -2),
             mobileButton.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -253,6 +264,10 @@ final class ToolbarView: NSView {
 
     @objc private func mobileTapped() {
         delegate?.toolbarDidToggleMobileMode()
+    }
+
+    @objc private func fillVideoTapped() {
+        delegate?.toolbarDidRequestFillVideo()
     }
 
     @objc private func profileBadgeTapped() {
