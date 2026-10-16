@@ -130,9 +130,7 @@ final class ContainerWindow: NSPanel {
             fullscreenFillsContainer = s.fullscreenFillsContainer ?? true
             isMobileMode = s.isMobileMode ?? false
             isAutoMobile = s.isAutoMobile ?? false
-            if isMobileMode {
-                webView.customUserAgent = WebViewConfig.mobileUserAgent
-            }
+            WebViewConfig.applyUserAgent(to: webView, mobile: isMobileMode)
         }
 
         toolbarView.updateMobileMode(isMobileMode)
@@ -287,9 +285,7 @@ final class ContainerWindow: NSPanel {
         isMobileMode = enabled
         toolbarView.updateMobileMode(enabled)
 
-        webView.customUserAgent = enabled
-            ? WebViewConfig.mobileUserAgent
-            : WebViewConfig.desktopUserAgent
+        WebViewConfig.applyUserAgent(to: webView, mobile: enabled)
 
         if let url = webView.url {
             let switchedURL = Self.switchDomain(url: url, toMobile: enabled)

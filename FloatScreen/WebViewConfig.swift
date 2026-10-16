@@ -5,12 +5,29 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     private weak var webView: WKWebView?
     private weak var containerWindow: ContainerWindow?
 
-    static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-    static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    static let safariVersion: String = {
+        let plistPath = "/Applications/Safari.app/Contents/Info.plist"
+        if let plist = NSDictionary(contentsOfFile: plistPath),
+           let version = plist["CFBundleShortVersionString"] as? String {
+            return version
+        }
+        print("[FloatScreen] Could not read Safari version from Info.plist, using fallback")
+        return "18.2"
+    }()
+
+    static let desktopAppName = "Version/\(safariVersion) Safari/605.1.15"
+
+    static var mobileUserAgent: String {
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Mobile/15E148 Safari/604.1"
+    }
+
+    // Per-domain UA overrides. Add entries here when a site needs a specific UA.
+    static var siteUserAgentOverrides: [String: String] = [:]
 
     static func makeConfiguration(profile: Profile = .personal) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = ProfileManager.dataStore(for: profile)
+        config.applicationNameForUserAgent = desktopAppName
 
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.isElementFullscreenEnabled = true
@@ -23,8 +40,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         self.containerWindow = container
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        let isMobile = container.isMobileMode
-        webView.customUserAgent = isMobile ? Self.mobileUserAgent : Self.desktopUserAgent
+        Self.applyUserAgent(to: webView, mobile: container.isMobileMode)
         webView.allowsBackForwardNavigationGestures = true
 
         let script = WKUserScript(
@@ -53,6 +69,17 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
             forMainFrameOnly: true
         )
         ucc.addUserScript(slackScript)
+    }
+
+    static func applyUserAgent(to webView: WKWebView, mobile: Bool, host: String? = nil) {
+        if let host, let override = siteUserAgentOverrides[host] {
+            webView.customUserAgent = override
+        } else if mobile {
+            webView.customUserAgent = mobileUserAgent
+        } else {
+            // nil lets applicationNameForUserAgent build a natural WebKit UA
+            webView.customUserAgent = nil
+        }
     }
 
     static func navigate(_ webView: WKWebView, to input: String) {
@@ -199,7 +226,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         let popupRect = NSRect(x: 300, y: 300, width: w, height: h)
 
         let popupView = WKWebView(frame: .zero, configuration: configuration)
-        popupView.customUserAgent = Self.desktopUserAgent
+        popupView.customUserAgent = nil
         popupView.uiDelegate = self
 
         let popup = NSPanel(
