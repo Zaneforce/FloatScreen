@@ -157,8 +157,10 @@ final class ContainerWindow: NSPanel {
             }
         }
 
-        // Default Slack/WhatsApp to site sounds so we don't double-play
-        if state == nil, let host = url?.host,
+        // Default Slack/WhatsApp to site sounds so we don't double-play.
+        // Apply to existing containers too if no mode was explicitly saved.
+        let effectiveHost = url?.host ?? state.flatMap { URL(string: $0.urlString)?.host }
+        if state?.soundMode == nil, let host = effectiveHost,
            Self.siteSoundHosts.contains(where: { host.hasSuffix($0) }) {
             soundMode = .siteSounds
         }
@@ -206,6 +208,8 @@ final class ContainerWindow: NSPanel {
     var pageTitle: String { webView.title ?? webView.url?.host ?? "New Tab" }
     private(set) var unreadCount: Int = 0
     private(set) var hasUnreadDot: Bool = false
+    private var lastNotifiedCount: Int = 0
+    private var countChangeSuppressionEnd: Date = .distantPast
 
     func webViewDidUpdate() {
         toolbarView.updateURL(webView.url?.absoluteString ?? "")
@@ -217,25 +221,35 @@ final class ContainerWindow: NSPanel {
         syncVisibilityPolyfill()
     }
 
+    func suppressCountChanges(for seconds: TimeInterval = 2.0) {
+        countChangeSuppressionEnd = Date().addingTimeInterval(seconds)
+    }
+
     func updateUnreadCount(_ count: Int) {
+        let isSuppressed = Date() < countChangeSuppressionEnd
+        let isGenuineIncrease = count > lastNotifiedCount && count > 0 && !isSuppressed
         unreadCount = count
         hasUnreadDot = false
+
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
-            bubble.setBadge(count: count)
+            bubble.setBadge(count: count, playSound: isGenuineIncrease)
+        }
+
+        if isGenuineIncrease {
+            lastNotifiedCount = count
         }
     }
 
     func updateUnreadDot() {
         hasUnreadDot = true
-        unreadCount = 0
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
             bubble.setBadgeDot()
         }
     }
 
     func clearUnreadBadge() {
-        unreadCount = 0
         hasUnreadDot = false
+        // Don't reset lastNotifiedCount — prevents false increase on re-minimize
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
             bubble.clearBadge()
         }

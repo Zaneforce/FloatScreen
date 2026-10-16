@@ -47,12 +47,11 @@ final class BubbleWindow: NSPanel {
 
     // MARK: - Badge
 
-    func setBadge(count: Int) {
-        let increased = count > badgeCount && count > 0
+    func setBadge(count: Int, playSound: Bool = false) {
         badgeCount = count
         badgeDot = false
         (contentView as? BubbleContentView)?.needsDisplay = true
-        if increased {
+        if playSound {
             popAnimation()
             pulseAnimation()
             if container?.soundMode == .floatScreenSound {
@@ -159,22 +158,30 @@ final class BubbleWindow: NSPanel {
     func placeAtSavedOrDefault() {
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame
+        let name = container?.pageTitle ?? "?"
 
         if let saved = container?.savedBubbleOrigin {
             var origin = saved
+            let beforeClamp = origin
             origin.x = max(vis.minX, min(origin.x, vis.maxX - Self.windowSize))
             origin.y = max(vis.minY, min(origin.y, vis.maxY - Self.windowSize))
+            if origin != beforeClamp {
+                print("[Bubble] \(name): clamped \(beforeClamp) -> \(origin) (vis=\(vis))")
+            }
             setFrameOrigin(origin)
-            // Only nudge if another bubble's circle actually overlaps ours
+            let beforeNudge = frame.origin
             resolveCircleOverlaps()
+            if frame.origin != beforeNudge {
+                print("[Bubble] \(name): nudged \(beforeNudge) -> \(frame.origin)")
+            }
         } else {
             let x = vis.maxX - Self.windowSize - 8
             let y = vis.maxY - Self.topInset - Self.windowSize
+            print("[Bubble] \(name): no saved position, using default (\(x), \(y))")
             setFrameOrigin(NSPoint(x: x, y: y))
             resolveCircleOverlaps()
         }
         savePosition()
-        print("[Bubble] placed \(container?.pageTitle ?? "?") at \(frame.origin)")
     }
 
     private func resolveCircleOverlaps() {
@@ -199,6 +206,8 @@ final class BubbleWindow: NSPanel {
     }
 
     func savePosition() {
+        let name = container?.pageTitle ?? "?"
+        print("[Bubble] \(name): savePosition \(frame.origin)")
         container?.savedBubbleOrigin = frame.origin
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame

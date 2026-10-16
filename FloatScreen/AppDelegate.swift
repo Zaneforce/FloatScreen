@@ -91,6 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func minimizeToBubble(_ container: ContainerWindow) {
         container.savedFrameBeforeMinimize = container.frame
+        container.suppressCountChanges()
         container.setPageHidden(true)
         container.orderOut(nil)
 
@@ -109,32 +110,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func restoreFromBubble(_ bubble: BubbleWindow) {
         guard let container = bubble.container else { return }
 
+        // Save bubble position BEFORE destroying it
+        let bubbleOrigin = bubble.frame.origin
+        container.savedBubbleOrigin = bubbleOrigin
+        print("[Restore] \(container.pageTitle): saved bubble origin \(bubbleOrigin)")
+
         bubbles.removeAll { $0 === bubble }
         bubble.orderOut(nil)
+
+        container.suppressCountChanges()
 
         let targetFrame = container.savedFrameBeforeMinimize ?? container.frame
         container.savedFrameBeforeMinimize = nil
 
-        // Restore at full size first, then animate from bubble position
+        // Restore at full size first so WKWebView lays out correctly
         container.setFrame(targetFrame, display: false)
         container.orderFront(nil)
-
-        // Force WKWebView to lay out at full size
         container.webView.frame = container.contentView?.bounds ?? targetFrame
         container.contentView?.layoutSubtreeIfNeeded()
         container.webView.setNeedsDisplay(container.webView.bounds)
 
-        // Animate from bubble position
-        container.setFrame(NSRect(origin: bubble.frame.origin,
-                                   size: NSSize(width: BubbleWindow.windowSize,
-                                                height: BubbleWindow.windowSize)),
-                           display: false)
+        // Animate from bubble position to full size
+        let animStart = NSRect(origin: bubbleOrigin,
+                               size: NSSize(width: BubbleWindow.windowSize,
+                                            height: BubbleWindow.windowSize))
+        container.setFrame(animStart, display: false)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.3
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             container.animator().setFrame(targetFrame, display: true)
         }, completionHandler: {
-            // Final relayout after animation
             container.webView.frame = container.contentView?.bounds ?? targetFrame
             container.contentView?.layoutSubtreeIfNeeded()
             container.webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'))",
