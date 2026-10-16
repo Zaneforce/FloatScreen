@@ -78,11 +78,45 @@ final class ToolbarView: NSView {
         }
     }
 
+    private var zoomLabel: NSTextField?
+
     func showZoomLevel(_ level: CGFloat) {
+        zoomLabel?.removeFromSuperview()
+
         let pct = Int(round(level * 100))
-        urlField.placeholderString = "\(pct)%"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.urlField.placeholderString = "Search or enter URL"
+        let label = NSTextField(labelWithString: "\(pct)%")
+        label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        label.backgroundColor = NSColor(white: 0.18, alpha: 0.95)
+        label.isBezeled = false
+        label.isEditable = false
+        label.drawsBackground = true
+        label.alignment = .center
+        label.sizeToFit()
+        label.frame.size.width += 10
+        label.frame.size.height += 2
+        label.wantsLayer = true
+        label.layer?.cornerRadius = 4
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: urlField.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+
+        label.alphaValue = 1
+        zoomLabel = label
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self, weak label] in
+            guard let label, label === self?.zoomLabel else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.3
+                label.animator().alphaValue = 0
+            }, completionHandler: {
+                label.removeFromSuperview()
+                if self?.zoomLabel === label { self?.zoomLabel = nil }
+            })
         }
     }
 
