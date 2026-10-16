@@ -6,16 +6,39 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     private weak var containerWindow: ContainerWindow?
 
     static let safariVersion: String = {
-        let plistPath = "/Applications/Safari.app/Contents/Info.plist"
-        if let plist = NSDictionary(contentsOfFile: plistPath),
-           let version = plist["CFBundleShortVersionString"] as? String {
-            return version
+        let paths = [
+            "/Applications/Safari.app/Contents/Info.plist",
+            "/System/Cryptexes/App/System/Applications/Safari.app/Contents/Info.plist",
+        ]
+        for path in paths {
+            if let plist = NSDictionary(contentsOfFile: path),
+               let version = plist["CFBundleShortVersionString"] as? String {
+                print("[FloatScreen] Safari version \(version) from \(path)")
+                return version
+            }
         }
-        print("[FloatScreen] Could not read Safari version from Info.plist, using fallback")
+        if let safariURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.Safari"
+        ) {
+            let plistURL = safariURL.appendingPathComponent("Contents/Info.plist")
+            if let plist = NSDictionary(contentsOf: plistURL),
+               let version = plist["CFBundleShortVersionString"] as? String {
+                print("[FloatScreen] Safari version \(version) from NSWorkspace: \(plistURL.path)")
+                return version
+            }
+        }
+        print("[FloatScreen] Could not detect Safari version, using fallback 26.0")
         return "26.0"
     }()
 
-    static let desktopAppName = "Version/\(safariVersion) Safari/605.1.15"
+    private static var macOSVersion: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(v.majorVersion)_\(v.minorVersion)"
+    }
+
+    static var desktopUserAgent: String {
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X \(macOSVersion)) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Safari/605.1.15"
+    }
 
     private static var iosVersionString: String {
         safariVersion.replacingOccurrences(of: ".", with: "_")
@@ -31,7 +54,6 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     static func makeConfiguration(profile: Profile = .personal) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = ProfileManager.dataStore(for: profile)
-        config.applicationNameForUserAgent = desktopAppName
 
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.isElementFullscreenEnabled = true
@@ -78,11 +100,13 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     static func applyUserAgent(to webView: WKWebView, mobile: Bool, host: String? = nil) {
         if let host, let override = siteUserAgentOverrides[host] {
             webView.customUserAgent = override
+            print("[FloatScreen] UA override for \(host): \(override)")
         } else if mobile {
             webView.customUserAgent = mobileUserAgent
+            print("[FloatScreen] UA (mobile): \(mobileUserAgent)")
         } else {
-            // nil lets applicationNameForUserAgent build a natural WebKit UA
-            webView.customUserAgent = nil
+            webView.customUserAgent = desktopUserAgent
+            print("[FloatScreen] UA (desktop): \(desktopUserAgent)")
         }
     }
 
@@ -132,6 +156,12 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         containerWindow?.webViewDidUpdate()
         containerWindow?.syncFullscreenFlag()
+        webView.evaluateJavaScript("navigator.userAgent") { result, _ in
+            if let ua = result as? String {
+                let host = webView.url?.host ?? "unknown"
+                print("[FloatScreen] navigator.userAgent on \(host): \(ua)")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -230,7 +260,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         let popupRect = NSRect(x: 300, y: 300, width: w, height: h)
 
         let popupView = WKWebView(frame: .zero, configuration: configuration)
-        popupView.customUserAgent = nil
+        popupView.customUserAgent = Self.desktopUserAgent
         popupView.uiDelegate = self
 
         let popup = NSPanel(

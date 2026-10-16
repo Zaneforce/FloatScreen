@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
@@ -118,6 +119,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 : "Disable Blocking on \(host)"
         }
         menu.addItem(disableOnSiteItem)
+
+        let copyUAItem = NSMenuItem(
+            title: "Copy User Agent",
+            action: #selector(copyUserAgent),
+            keyEquivalent: ""
+        )
+        copyUAItem.target = self
+        menu.addItem(copyUAItem)
+
+        let clearDataItem = NSMenuItem(
+            title: "Clear Data for This Site",
+            action: #selector(clearSiteData),
+            keyEquivalent: ""
+        )
+        clearDataItem.target = self
+        if let host = activeContainer?.currentURL?.host {
+            clearDataItem.title = "Clear Data for \(host)"
+        }
+        menu.addItem(clearDataItem)
 
         menu.addItem(.separator())
 
@@ -325,6 +345,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let anyClickThrough = containers.contains { $0.ignoresMouseEvents }
         for c in containers {
             c.setClickThrough(!anyClickThrough)
+        }
+    }
+
+    @objc private func copyUserAgent() {
+        guard let container = activeContainer else { return }
+        container.webView.evaluateJavaScript("navigator.userAgent") { result, _ in
+            if let ua = result as? String {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(ua, forType: .string)
+                print("[FloatScreen] Copied UA: \(ua)")
+            }
+        }
+    }
+
+    @objc private func clearSiteData() {
+        guard let container = activeContainer,
+              let host = container.currentURL?.host else { return }
+        let dataStore = container.webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        dataStore.fetchDataRecords(ofTypes: types) { records in
+            let matching = records.filter { record in
+                record.displayName == host || host.hasSuffix(".\(record.displayName)")
+            }
+            guard !matching.isEmpty else {
+                print("[FloatScreen] No data records found for \(host)")
+                return
+            }
+            dataStore.removeData(ofTypes: types, for: matching) {
+                print("[FloatScreen] Cleared \(matching.count) data records for \(host)")
+                DispatchQueue.main.async { container.webView.reload() }
+            }
         }
     }
 
