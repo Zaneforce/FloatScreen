@@ -2,6 +2,7 @@ import AppKit
 
 protocol ToolbarViewDelegate: AnyObject {
     func toolbarDidRequestClose()
+    func toolbarDidRequestMinimize()
     func toolbarDidRequestBack()
     func toolbarDidRequestForward()
     func toolbarDidRequestReload()
@@ -18,6 +19,7 @@ final class ToolbarView: NSView {
 
     let urlField: NSTextField
     private let closeButton: BarButton
+    private let minimizeButton: BarButton
     private let backButton: BarButton
     private let forwardButton: BarButton
     private let reloadButton: BarButton
@@ -29,6 +31,7 @@ final class ToolbarView: NSView {
     override init(frame frameRect: NSRect) {
         urlField = NSTextField()
         closeButton = BarButton()
+        minimizeButton = BarButton()
         backButton = BarButton()
         forwardButton = BarButton()
         reloadButton = BarButton()
@@ -82,6 +85,7 @@ final class ToolbarView: NSView {
         addSubview(separator)
 
         configureButton(closeButton, symbol: "xmark.circle.fill", action: #selector(closeTapped))
+        configureButton(minimizeButton, symbol: "minus.circle.fill", action: #selector(minimizeTapped))
         configureButton(backButton, symbol: "chevron.left", action: #selector(backTapped))
         configureButton(forwardButton, symbol: "chevron.right", action: #selector(forwardTapped))
         configureButton(reloadButton, symbol: "arrow.clockwise", action: #selector(reloadTapped))
@@ -112,7 +116,7 @@ final class ToolbarView: NSView {
         urlField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(urlField)
 
-        let views = [closeButton, backButton, forwardButton, reloadButton,
+        let views = [closeButton, minimizeButton, backButton, forwardButton, reloadButton,
                      profileBadge, urlField, mobileButton, pinButton] as [NSView]
         for v in views { v.translatesAutoresizingMaskIntoConstraints = false }
 
@@ -122,7 +126,12 @@ final class ToolbarView: NSView {
             closeButton.widthAnchor.constraint(equalToConstant: 16),
             closeButton.heightAnchor.constraint(equalToConstant: 16),
 
-            backButton.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 4),
+            minimizeButton.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 4),
+            minimizeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            minimizeButton.widthAnchor.constraint(equalToConstant: 16),
+            minimizeButton.heightAnchor.constraint(equalToConstant: 16),
+
+            backButton.leadingAnchor.constraint(equalTo: minimizeButton.trailingAnchor, constant: 4),
             backButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             backButton.widthAnchor.constraint(equalToConstant: 20),
             backButton.heightAnchor.constraint(equalToConstant: 16),
@@ -176,6 +185,7 @@ final class ToolbarView: NSView {
     }
 
     @objc private func closeTapped() { delegate?.toolbarDidRequestClose() }
+    @objc private func minimizeTapped() { delegate?.toolbarDidRequestMinimize() }
     @objc private func backTapped() { delegate?.toolbarDidRequestBack() }
     @objc private func forwardTapped() { delegate?.toolbarDidRequestForward() }
     @objc private func reloadTapped() { delegate?.toolbarDidRequestReload() }

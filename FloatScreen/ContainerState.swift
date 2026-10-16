@@ -14,10 +14,14 @@ struct ContainerState: Codable {
     var profileId: String?
     var isMobileMode: Bool?
     var isAutoMobile: Bool?
+    var isMinimized: Bool?
+    var bubbleX: Double?
+    var bubbleY: Double?
 }
 
 final class StatePersistence {
     private static let key = "openContainers"
+    private static let recentlyClosedKey = "recentlyClosed"
 
     static func save(_ states: [ContainerState]) {
         guard let data = try? JSONEncoder().encode(states) else { return }
@@ -26,6 +30,18 @@ final class StatePersistence {
 
     static func load() -> [ContainerState] {
         guard let data = UserDefaults.standard.data(forKey: key),
+              let states = try? JSONDecoder().decode([ContainerState].self, from: data)
+        else { return [] }
+        return states
+    }
+
+    static func saveRecentlyClosed(_ states: [ContainerState]) {
+        guard let data = try? JSONEncoder().encode(states) else { return }
+        UserDefaults.standard.set(data, forKey: recentlyClosedKey)
+    }
+
+    static func loadRecentlyClosed() -> [ContainerState] {
+        guard let data = UserDefaults.standard.data(forKey: recentlyClosedKey),
               let states = try? JSONDecoder().decode([ContainerState].self, from: data)
         else { return [] }
         return states

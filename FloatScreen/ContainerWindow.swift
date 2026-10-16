@@ -22,6 +22,8 @@ final class ContainerWindow: NSPanel {
     private static let autoMobileOffThreshold: CGFloat = 600
     private var autoMobileDebounceTimer: Timer?
 
+    var savedFrameBeforeMinimize: NSRect?
+
     private var webViewTopConstraint: NSLayoutConstraint!
     private var containerView: NSView!
 
@@ -346,7 +348,8 @@ final class ContainerWindow: NSPanel {
     // MARK: - State
 
     func captureState() -> ContainerState {
-        let f = frame
+        let f = savedFrameBeforeMinimize ?? frame
+        let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first { $0.container === self }
         return ContainerState(
             id: containerID,
             urlString: webView.url?.absoluteString ?? "",
@@ -360,7 +363,10 @@ final class ContainerWindow: NSPanel {
             fullscreenFillsContainer: fullscreenFillsContainer,
             profileId: profile.id.uuidString,
             isMobileMode: isMobileMode,
-            isAutoMobile: isAutoMobile
+            isAutoMobile: isAutoMobile,
+            isMinimized: bubble != nil,
+            bubbleX: bubble.map { Double($0.frame.origin.x) },
+            bubbleY: bubble.map { Double($0.frame.origin.y) }
         )
     }
 }
@@ -369,6 +375,9 @@ final class ContainerWindow: NSPanel {
 
 extension ContainerWindow: ToolbarViewDelegate {
     func toolbarDidRequestClose() { close() }
+    func toolbarDidRequestMinimize() {
+        (NSApp.delegate as? AppDelegate)?.minimizeToBubble(self)
+    }
     func toolbarDidRequestBack() { webView.goBack() }
     func toolbarDidRequestForward() { webView.goForward() }
     func toolbarDidRequestReload() { webView.reload() }

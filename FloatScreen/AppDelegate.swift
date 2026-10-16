@@ -2,6 +2,8 @@ import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var containers: [ContainerWindow] = []
+    var bubbles: [BubbleWindow] = []
+    var recentlyClosed: [ContainerState] = []
     private var menuBarController: MenuBarController?
     private var globalShortcut: GlobalShortcut?
 
@@ -11,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupHiddenMenu()
         globalShortcut = GlobalShortcut { [weak self] in self?.toggleAllContainers() }
         ContentBlocker.shared.loadRulesIfNeeded()
+
+        recentlyClosed = StatePersistence.loadRecentlyClosed()
 
         let savedStates = StatePersistence.load()
         if savedStates.isEmpty {
@@ -24,12 +28,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let profile = profileId.map { ProfileManager.shared.profile(for: $0) }
                 let container = ContainerWindow(id: state.id, url: url, state: state, profile: profile)
                 containers.append(container)
-                container.orderFront(nil)
+
+                if state.isMinimized == true {
+                    container.savedFrameBeforeMinimize = container.frame
+                    let bubble = BubbleWindow(container: container)
+                    if let bx = state.bubbleX, let by = state.bubbleY {
+                        bubble.setFrameOrigin(NSPoint(x: bx, y: by))
+                    }
+                    bubbles.append(bubble)
+                    bubble.orderFront(nil)
+                } else {
+                    container.orderFront(nil)
+                }
             }
+            restackBubbles()
         }
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(windowDidClose(_:)),
+            self, selector: #selector(windowWillClose(_:)),
             name: NSWindow.willCloseNotification, object: nil
         )
     }
@@ -37,6 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         let states = containers.map { $0.captureState() }
         StatePersistence.save(states)
+        StatePersistence.saveRecentlyClosed(recentlyClosed)
     }
 
     @discardableResult
@@ -48,19 +65,125 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return container
     }
 
+    // MARK: - Toggle All
+
     func toggleAllContainers() {
-        let anyVisible = containers.contains { $0.isVisible }
+        let anyContainerVisible = containers.contains { $0.isVisible }
+        let anyBubbleVisible = bubbles.contains { $0.isVisible }
+        let anyVisible = anyContainerVisible || anyBubbleVisible
+
         if anyVisible {
             for c in containers { c.orderOut(nil) }
+            for b in bubbles { b.orderOut(nil) }
         } else {
-            for c in containers { c.orderFront(nil) }
+            for b in bubbles { b.orderFront(nil) }
+            let nonMinimized = containers.filter { c in
+                !bubbles.contains { $0.container === c }
+            }
+            for c in nonMinimized { c.orderFront(nil) }
             NSApp.activate(ignoringOtherApps: true)
-            containers.last?.makeKeyAndOrderFront(nil)
+            nonMinimized.last?.makeKeyAndOrderFront(nil)
         }
     }
 
-    @objc private func windowDidClose(_ notification: Notification) {
+    // MARK: - Bubble Management
+
+    func minimizeToBubble(_ container: ContainerWindow) {
+        container.savedFrameBeforeMinimize = container.frame
+        container.orderOut(nil)
+
+        let bubble = BubbleWindow(container: container)
+        bubbles.append(bubble)
+        restackBubbles()
+        bubble.orderFront(nil)
+        menuBarController?.rebuildMenu()
+    }
+
+    func restoreFromBubble(_ bubble: BubbleWindow) {
+        guard let container = bubble.container else { return }
+
+        bubbles.removeAll { $0 === bubble }
+        bubble.orderOut(nil)
+
+        let targetFrame = container.savedFrameBeforeMinimize ?? container.frame
+        container.savedFrameBeforeMinimize = nil
+
+        container.setFrame(bubble.frame, display: false)
+        container.orderFront(nil)
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            container.animator().setFrame(targetFrame, display: true)
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        container.makeKeyAndOrderFront(nil)
+
+        restackBubbles()
+        menuBarController?.rebuildMenu()
+    }
+
+    func closeBubble(_ bubble: BubbleWindow) {
+        guard let container = bubble.container else { return }
+
+        let state = container.captureState()
+        addToRecentlyClosed(state)
+
+        bubbles.removeAll { $0 === bubble }
+        containers.removeAll { $0 === container }
+        bubble.orderOut(nil)
+        container.close()
+
+        restackBubbles()
+        menuBarController?.rebuildMenu()
+    }
+
+    private func restackBubbles() {
+        for (index, bubble) in bubbles.enumerated() {
+            bubble.updatePosition(index: index)
+        }
+    }
+
+    // MARK: - Recently Closed
+
+    private func addToRecentlyClosed(_ state: ContainerState) {
+        var modified = state
+        modified.isMinimized = nil
+        modified.bubbleX = nil
+        modified.bubbleY = nil
+        recentlyClosed.append(modified)
+        if recentlyClosed.count > 10 {
+            recentlyClosed.removeFirst(recentlyClosed.count - 10)
+        }
+    }
+
+    func reopenLastClosed() {
+        guard let state = recentlyClosed.popLast() else { return }
+        reopenContainer(from: state)
+    }
+
+    func reopenContainer(from state: ContainerState) {
+        let url = URL(string: state.urlString)
+        let profileId = state.profileId.flatMap(UUID.init(uuidString:))
+        let profile = profileId.map { ProfileManager.shared.profile(for: $0) }
+        let container = ContainerWindow(url: url, state: state, profile: profile)
+        containers.append(container)
+        container.orderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        container.makeKeyAndOrderFront(nil)
+        menuBarController?.rebuildMenu()
+    }
+
+    // MARK: - Window Close
+
+    @objc private func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? ContainerWindow else { return }
+        let isMinimized = bubbles.contains { $0.container === window }
+        if !isMinimized {
+            let state = window.captureState()
+            addToRecentlyClosed(state)
+        }
         containers.removeAll { $0 === window }
         menuBarController?.rebuildMenu()
     }
@@ -86,6 +209,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(NSMenuItem(title: "Close Container",
                                     action: #selector(handleCloseContainer),
                                     keyEquivalent: "w"))
+        let reopenItem = NSMenuItem(title: "Reopen Closed",
+                                    action: #selector(handleReopenClosed),
+                                    keyEquivalent: "t")
+        reopenItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(reopenItem)
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
@@ -127,6 +255,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeContainer?.close()
     }
 
+    @objc private func handleReopenClosed() {
+        reopenLastClosed()
+        menuBarController?.rebuildMenu()
+    }
+
     @objc private func handleFocusURL() {
         if let c = activeContainer {
             c.makeKeyAndOrderFront(nil)
@@ -145,4 +278,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleForward() {
         activeContainer?.webView.goForward()
     }
+}
+
+final class Box<T> {
+    let value: T
+    init(_ value: T) { self.value = value }
 }

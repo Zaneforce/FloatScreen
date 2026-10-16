@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		00DB3989C31DF94734656668 /* YouTubeAdSkipper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 341022C2576FA685CF7B2B1C /* YouTubeAdSkipper.swift */; };
 		10F6D16747AB84A8880C151C /* ContainerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F124DDA7208C955E461A2A14 /* ContainerState.swift */; };
+		2BFD05E922E15E738E7016B1 /* BubbleWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12A29C0CC4568453BA742D8 /* BubbleWindow.swift */; };
 		2DF6616FCCA7A3A1AC7DBE28 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34CE4EDB7BF12989B793DC18 /* Favorites.swift */; };
 		440FA4E7528F94858C5DF600 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 959E03499E49B4A81FA4F886 /* Profile.swift */; };
 		45EFB51A26F75E05E1E8EDF4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D43A5143F72B37B16784C75 /* main.swift */; };
@@ -35,6 +36,7 @@
 		7CCE08656556C96E0316D302 /* WebViewConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewConfig.swift; sourceTree = "<group>"; };
 		959E03499E49B4A81FA4F886 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
 		AD39781697E2AFD20966E5AE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C12A29C0CC4568453BA742D8 /* BubbleWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubbleWindow.swift; sourceTree = "<group>"; };
 		D48F6A1CB772FB5EDBE8B5A4 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = WebKit.framework; sourceTree = "<group>"; };
 		E93CC8D929990F08A03B08C5 /* FloatScreen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FloatScreen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F124DDA7208C955E461A2A14 /* ContainerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerState.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				2692E3309912F5B223F5C409 /* AppDelegate.swift */,
+				C12A29C0CC4568453BA742D8 /* BubbleWindow.swift */,
 				F124DDA7208C955E461A2A14 /* ContainerState.swift */,
 				317EC1223BCB0925805C91EE /* ContainerWindow.swift */,
 				27347B9142698EED99867B4D /* ContentBlocker.swift */,
@@ -157,6 +160,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F815F4043F393A5040418FBC /* AppDelegate.swift in Sources */,
+				2BFD05E922E15E738E7016B1 /* BubbleWindow.swift in Sources */,
 				10F6D16747AB84A8880C151C /* ContainerState.swift in Sources */,
 				B36E37D9AC18136459A6BC09 /* ContainerWindow.swift in Sources */,
 				6DB4D27F6BF6CD97E57FB13A /* ContentBlocker.swift in Sources */,

@@ -208,6 +208,35 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let reopenItem = NSMenuItem(
+            title: "Reopen Closed Container",
+            action: #selector(reopenClosed),
+            keyEquivalent: ""
+        )
+        reopenItem.target = self
+        reopenItem.isEnabled = !(appDelegate?.recentlyClosed.isEmpty ?? true)
+        menu.addItem(reopenItem)
+
+        if let recent = appDelegate?.recentlyClosed, !recent.isEmpty {
+            let recentItem = NSMenuItem(title: "Recently Closed", action: nil, keyEquivalent: "")
+            let recentSubmenu = NSMenu()
+            for state in recent.reversed().prefix(10) {
+                let title = state.urlString.isEmpty ? "New Tab" : state.urlString
+                let item = NSMenuItem(
+                    title: String(title.prefix(60)),
+                    action: #selector(reopenSpecific(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = Box(state)
+                recentSubmenu.addItem(item)
+            }
+            recentItem.submenu = recentSubmenu
+            menu.addItem(recentItem)
+        }
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit FloatScreen",
             action: #selector(quitApp),
@@ -396,6 +425,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for c in toClose { c.close() }
 
         Task { await ProfileManager.shared.delete(id) }
+        rebuildMenu()
+    }
+
+    @objc private func reopenClosed() {
+        appDelegate?.reopenLastClosed()
+        rebuildMenu()
+    }
+
+    @objc private func reopenSpecific(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? Box<ContainerState> else { return }
+        appDelegate?.recentlyClosed.removeAll { $0.id == box.value.id }
+        appDelegate?.reopenContainer(from: box.value)
         rebuildMenu()
     }
 
