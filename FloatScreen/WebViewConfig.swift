@@ -12,13 +12,17 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
             return version
         }
         print("[FloatScreen] Could not read Safari version from Info.plist, using fallback")
-        return "18.2"
+        return "26.0"
     }()
 
     static let desktopAppName = "Version/\(safariVersion) Safari/605.1.15"
 
+    private static var iosVersionString: String {
+        safariVersion.replacingOccurrences(of: ".", with: "_")
+    }
+
     static var mobileUserAgent: String {
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Mobile/15E148 Safari/604.1"
+        "Mozilla/5.0 (iPhone; CPU iPhone OS \(iosVersionString) like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Mobile/15E148 Safari/604.1"
     }
 
     // Per-domain UA overrides. Add entries here when a site needs a specific UA.
