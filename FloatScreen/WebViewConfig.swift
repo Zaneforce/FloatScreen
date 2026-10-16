@@ -31,13 +31,8 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         return "26.0"
     }()
 
-    private static var macOSVersion: String {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        return "\(v.majorVersion)_\(v.minorVersion)"
-    }
-
     static var desktopUserAgent: String {
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X \(macOSVersion)) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Safari/605.1.15"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Safari/605.1.15"
     }
 
     private static var iosVersionString: String {
