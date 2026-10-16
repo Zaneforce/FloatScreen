@@ -215,6 +215,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
+        // Edit menu — nil targets dispatch to first responder (WKWebView, NSTextField)
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        let redoItem = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redoItem)
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        let pasteMatchItem = NSMenuItem(title: "Paste and Match Style",
+                                        action: #selector(NSTextView.pasteAsPlainText(_:)),
+                                        keyEquivalent: "v")
+        pasteMatchItem.keyEquivalentModifierMask = [.command, .option, .shift]
+        editMenu.addItem(pasteMatchItem)
+        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(.separator())
+        let findItem = NSMenuItem(title: "Find\u{2026}", action: #selector(NSResponder.performTextFinderAction(_:)),
+                                  keyEquivalent: "f")
+        findItem.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
+        editMenu.addItem(findItem)
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "Emoji & Symbols",
+                                    action: #selector(NSApplication.orderFrontCharacterPalette(_:)),
+                                    keyEquivalent: " "))
+        editMenu.items.last?.keyEquivalentModifierMask = [.command, .control]
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
         let fileMenuItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(NSMenuItem(title: "New Container",
