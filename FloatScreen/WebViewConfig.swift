@@ -94,6 +94,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
 
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.isElementFullscreenEnabled = true
+        config.mediaTypesRequiringUserActionForPlayback = []
 
         return config
     }

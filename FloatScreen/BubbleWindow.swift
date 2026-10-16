@@ -2,7 +2,9 @@ import AppKit
 
 final class BubbleWindow: NSPanel {
     static let circleSize: CGFloat = 52
-    static let windowSize: CGFloat = 62
+    static let badgeOverhang: CGFloat = 12
+    static let windowSize: CGFloat = 76
+    static let visualCenter: CGFloat = (windowSize - badgeOverhang) / 2
     static let spacing: CGFloat = 8
 
     weak var container: ContainerWindow?
@@ -47,7 +49,11 @@ final class BubbleWindow: NSPanel {
         badgeCount = count
         badgeDot = false
         (contentView as? BubbleContentView)?.needsDisplay = true
-        if increased { popAnimation() }
+        if increased {
+            popAnimation()
+            pulseAnimation()
+            NotificationSound.shared.playIfNeeded()
+        }
     }
 
     func setBadgeDot() {
@@ -56,6 +62,7 @@ final class BubbleWindow: NSPanel {
         badgeCount = 0
         (contentView as? BubbleContentView)?.needsDisplay = true
         popAnimation()
+        pulseAnimation()
     }
 
     func clearBadge() {
@@ -67,14 +74,29 @@ final class BubbleWindow: NSPanel {
 
     private func popAnimation() {
         let orig = frame
-        let expanded = orig.insetBy(dx: -3, dy: -3)
+        let expanded = orig.insetBy(dx: -4, dy: -4)
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.1
+            ctx.duration = 0.12
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().setFrame(expanded, display: true)
         }, completionHandler: {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
+                ctx.duration = 0.18
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 self.animator().setFrame(orig, display: true)
+            }
+        })
+    }
+
+    private func pulseAnimation() {
+        guard let view = contentView else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            view.animator().alphaValue = 0.7
+        }, completionHandler: {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                view.animator().alphaValue = 1.0
             }
         })
     }
@@ -117,7 +139,7 @@ final class BubbleWindow: NSPanel {
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame
         let x = vis.maxX - Self.windowSize - Self.spacing
-        let y = vis.maxY - CGFloat(index + 1) * (Self.windowSize + Self.spacing)
+        let y = vis.maxY - CGFloat(index + 1) * (Self.circleSize + Self.spacing) - Self.badgeOverhang
         setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -213,20 +235,18 @@ private class BubbleContentView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let owner else { return }
-        let ws = BubbleWindow.windowSize
         let cs = BubbleWindow.circleSize
-        let offset = (ws - cs) / 2
 
         let profileColor = owner.container?.profile.color ?? .controlAccentColor
 
-        // Outer ring
-        let ringRect = NSRect(x: offset, y: offset - 2, width: cs, height: cs)
+        // Circle is positioned at bottom-left with room for badge overflow at top-right
+        let circleOrigin = NSPoint(x: 0, y: 0)
+        let ringRect = NSRect(x: circleOrigin.x, y: circleOrigin.y, width: cs, height: cs)
         let ringPath = NSBezierPath(ovalIn: ringRect.insetBy(dx: 0.5, dy: 0.5))
         profileColor.setStroke()
         ringPath.lineWidth = 2.5
         ringPath.stroke()
 
-        // Solid opaque inner circle (white or dark based on appearance)
         let innerRect = ringRect.insetBy(dx: 3, dy: 3)
         let innerPath = NSBezierPath(ovalIn: innerRect)
 
@@ -261,45 +281,53 @@ private class BubbleContentView: NSView {
 
         NSGraphicsContext.current?.cgContext.restoreGState()
 
-        // Badge
+        // Badge centered on circle's top-right edge
         if owner.badgeCount > 0 || owner.badgeDot {
-            drawBadge(at: NSPoint(x: ringRect.maxX - 6, y: ringRect.maxY - 6))
+            let badgeCenter = NSPoint(
+                x: ringRect.maxX - 4,
+                y: ringRect.maxY - 4
+            )
+            drawBadge(at: badgeCenter, isDark: isDark)
         }
     }
 
-    private func drawBadge(at center: NSPoint) {
+    private func drawBadge(at center: NSPoint, isDark: Bool) {
         guard let owner else { return }
+        let red = NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1)
+        let outlineBg: NSColor = isDark ? NSColor(white: 0.1, alpha: 1) : .white
 
         if owner.badgeDot {
             let dotSize: CGFloat = 12
             let dotRect = NSRect(x: center.x - dotSize / 2, y: center.y - dotSize / 2,
                                  width: dotSize, height: dotSize)
-            let dotPath = NSBezierPath(ovalIn: dotRect)
-            NSColor.white.setFill()
+            // Shadow
+            let shadow = NSShadow()
+            shadow.shadowColor = .black.withAlphaComponent(0.3)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+
+            outlineBg.setFill()
             NSBezierPath(ovalIn: dotRect.insetBy(dx: -2, dy: -2)).fill()
-            NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1).setFill()
-            dotPath.fill()
+            NSShadow().set()
+            red.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
             return
         }
 
-        let text: String
-        if owner.badgeCount > 99 {
-            text = "99+"
-        } else {
-            text = "\(owner.badgeCount)"
-        }
+        let text = owner.badgeCount > 99 ? "99+" : "\(owner.badgeCount)"
 
+        let font = NSFont.systemFont(ofSize: 13, weight: .bold)
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+            .font: font,
             .foregroundColor: NSColor.white,
         ]
         let attrStr = NSAttributedString(string: text, attributes: attrs)
         let textSize = attrStr.size()
 
-        let padH: CGFloat = 4
-        let padV: CGFloat = 2
-        let badgeW = max(textSize.width + padH * 2, textSize.height + padV * 2)
-        let badgeH = textSize.height + padV * 2
+        let padH: CGFloat = 5
+        let badgeH: CGFloat = 22
+        let badgeW = max(badgeH, textSize.width + padH * 2)
 
         let badgeRect = NSRect(
             x: center.x - badgeW / 2,
@@ -307,14 +335,22 @@ private class BubbleContentView: NSView {
             width: badgeW, height: badgeH
         )
 
+        // Shadow
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.3)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+
+        // Outline
         let outlineRect = badgeRect.insetBy(dx: -2, dy: -2)
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let outlineColor: NSColor = isDark ? NSColor(white: 0.15, alpha: 1) : .white
-        outlineColor.setFill()
+        outlineBg.setFill()
         NSBezierPath(roundedRect: outlineRect, xRadius: outlineRect.height / 2,
                      yRadius: outlineRect.height / 2).fill()
 
-        let red = NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1)
+        // Clear shadow for the red fill
+        NSShadow().set()
+
         red.setFill()
         NSBezierPath(roundedRect: badgeRect, xRadius: badgeH / 2,
                      yRadius: badgeH / 2).fill()
@@ -323,5 +359,20 @@ private class BubbleContentView: NSView {
             x: badgeRect.midX - textSize.width / 2,
             y: badgeRect.midY - textSize.height / 2
         ))
+    }
+}
+
+// MARK: - Notification Sound
+
+final class NotificationSound {
+    static let shared = NotificationSound()
+    private var lastPlayTime: Date = .distantPast
+    private let cooldown: TimeInterval = 3.0
+
+    func playIfNeeded() {
+        let now = Date()
+        guard now.timeIntervalSince(lastPlayTime) > cooldown else { return }
+        lastPlayTime = now
+        NSSound.beep()
     }
 }
