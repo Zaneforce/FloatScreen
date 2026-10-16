@@ -519,9 +519,12 @@ final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    private var iconCache: [String: URL] = [:]
+
     func post(id: String, title: String, body: String?, container: ContainerWindow?) {
+        let siteName = container?.webView.url?.host ?? container?.pageTitle ?? "FloatScreen"
         let content = UNMutableNotificationContent()
-        content.title = title
+        content.title = "\(siteName) \u{00b7} \(title)"
         if let body { content.body = body }
         if let name = container?.profile.name {
             content.subtitle = name
@@ -531,9 +534,7 @@ final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
         switch soundMode {
         case .floatScreenSound:
             content.sound = .default
-        case .siteSounds:
-            content.sound = nil
-        case .silent:
+        case .siteSounds, .silent:
             content.sound = nil
         }
 
@@ -542,12 +543,60 @@ final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
         }
         content.userInfo["notifId"] = id
 
+        if let host = container?.webView.url?.host,
+           let cachedURL = iconCache[host],
+           let attachment = try? UNNotificationAttachment(identifier: "icon", url: cachedURL) {
+            content.attachments = [attachment]
+        }
+
         let request = UNNotificationRequest(
             identifier: "fs-\(id)-\(UUID().uuidString.prefix(4))",
             content: content,
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+
+        cacheSiteIcon(for: container)
+    }
+
+    func cacheSiteIcon(for container: ContainerWindow?) {
+        guard let webView = container?.webView,
+              let host = webView.url?.host,
+              iconCache[host] == nil else { return }
+
+        let js = """
+        (function(){
+            var link = document.querySelector('link[rel*="icon"]');
+            return link ? link.href : (location.origin + '/favicon.ico');
+        })()
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let urlStr = result as? String, let url = URL(string: urlStr) else { return }
+            URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+                guard let data, let img = NSImage(data: data), img.isValid else { return }
+                let size = NSSize(width: 128, height: 128)
+                let resized = NSImage(size: size)
+                resized.lockFocus()
+                img.draw(in: NSRect(origin: .zero, size: size),
+                         from: NSRect(origin: .zero, size: img.size),
+                         operation: .copy, fraction: 1.0)
+                resized.unlockFocus()
+
+                guard let tiff = resized.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiff),
+                      let png = bitmap.representation(using: .png, properties: [:]) else { return }
+
+                let tmpDir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("FloatScreenIcons", isDirectory: true)
+                try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+                let fileURL = tmpDir.appendingPathComponent("\(host).png")
+                try? png.write(to: fileURL)
+
+                DispatchQueue.main.async {
+                    self?.iconCache[host] = fileURL
+                }
+            }.resume()
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
