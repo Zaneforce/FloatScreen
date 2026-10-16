@@ -521,8 +521,35 @@ final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
 
     private var iconCache: [String: URL] = [:]
 
+    private static let knownSiteNames: [String: String] = [
+        "app.slack.com": "Slack", "slack.com": "Slack",
+        "mail.google.com": "Gmail", "gmail.com": "Gmail",
+        "youtube.com": "YouTube", "www.youtube.com": "YouTube", "m.youtube.com": "YouTube",
+        "discord.com": "Discord",
+        "notion.so": "Notion", "www.notion.so": "Notion",
+        "github.com": "GitHub", "www.github.com": "GitHub",
+        "web.whatsapp.com": "WhatsApp",
+        "teams.microsoft.com": "Teams",
+        "claude.ai": "Claude",
+    ]
+
+    private func friendlySiteName(for container: ContainerWindow?) -> String {
+        guard let host = container?.webView.url?.host else {
+            return container?.pageTitle ?? "FloatScreen"
+        }
+        if let known = Self.knownSiteNames[host] { return known }
+
+        // Try meta tags cached on the container
+        // Fall back to cleaned domain
+        var name = host
+        for prefix in ["www.", "app.", "m.", "mobile."] {
+            if name.hasPrefix(prefix) { name = String(name.dropFirst(prefix.count)) }
+        }
+        return name.prefix(1).uppercased() + name.dropFirst()
+    }
+
     func post(id: String, title: String, body: String?, container: ContainerWindow?) {
-        let siteName = container?.webView.url?.host ?? container?.pageTitle ?? "FloatScreen"
+        let siteName = friendlySiteName(for: container)
         let content = UNMutableNotificationContent()
         content.title = "\(siteName) \u{00b7} \(title)"
         if let body { content.body = body }
@@ -534,6 +561,7 @@ final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
         switch soundMode {
         case .floatScreenSound:
             content.sound = .default
+            NotificationSound.shared.markNativeNotificationPosted()
         case .siteSounds, .silent:
             content.sound = nil
         }

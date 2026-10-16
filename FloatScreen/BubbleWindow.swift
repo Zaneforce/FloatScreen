@@ -52,8 +52,11 @@ final class BubbleWindow: NSPanel {
         if increased {
             popAnimation()
             pulseAnimation()
+            // Sound is handled by NotificationForwarder for web notifications.
+            // For title-based badge increases (no web notification), play here
+            // only if floatScreenSound mode AND no native notification was just posted.
             if container?.soundMode == .floatScreenSound {
-                NotificationSound.shared.playIfNeeded()
+                NotificationSound.shared.playUnlessRecentlyPosted()
             }
         }
     }
@@ -427,7 +430,7 @@ private class BubbleContentView: NSView {
 
 final class NotificationSound {
     static let shared = NotificationSound()
-    private var lastPlayTime: Date = .distantPast
+    private var lastSoundTime: Date = .distantPast
     private let cooldown: TimeInterval = 3.0
 
     static let availableSounds = ["Glass", "Ping", "Pop", "Purr", "Sosumi", "Tink"]
@@ -438,10 +441,23 @@ final class NotificationSound {
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedSoundKey) }
     }
 
+    func markNativeNotificationPosted() {
+        lastSoundTime = Date()
+    }
+
+    func playUnlessRecentlyPosted() {
+        let now = Date()
+        guard now.timeIntervalSince(lastSoundTime) > cooldown else { return }
+        lastSoundTime = now
+        if let sound = NSSound(named: NSSound.Name(selectedSoundName)) {
+            sound.play()
+        }
+    }
+
     func playIfNeeded() {
         let now = Date()
-        guard now.timeIntervalSince(lastPlayTime) > cooldown else { return }
-        lastPlayTime = now
+        guard now.timeIntervalSince(lastSoundTime) > cooldown else { return }
+        lastSoundTime = now
         if let sound = NSSound(named: NSSound.Name(selectedSoundName)) {
             sound.play()
         }
