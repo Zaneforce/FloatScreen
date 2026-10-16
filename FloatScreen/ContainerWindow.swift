@@ -43,6 +43,7 @@ final class ContainerWindow: NSPanel {
     private var zoomHideTimer: Timer?
 
     private static let slackHosts = ["app.slack.com", "slack.com"]
+    private static let siteSoundHosts = ["app.slack.com", "slack.com", "web.whatsapp.com"]
 
     private var webViewTopConstraint: NSLayoutConstraint!
     private var containerView: NSView!
@@ -156,12 +157,13 @@ final class ContainerWindow: NSPanel {
             }
         }
 
-        // Default Slack to site sounds so we don't double-play
+        // Default Slack/WhatsApp to site sounds so we don't double-play
         if state == nil, let host = url?.host,
-           Self.slackHosts.contains(where: { host.hasSuffix($0) }) {
+           Self.siteSoundHosts.contains(where: { host.hasSuffix($0) }) {
             soundMode = .siteSounds
         }
 
+        startTitleObservation()
         toolbarView.updateMobileMode(isMobileMode)
 
         NotificationCenter.default.addObserver(
@@ -273,6 +275,14 @@ final class ContainerWindow: NSPanel {
         close()
     }
 
+    private var titleObservation: NSKeyValueObservation?
+
+    func startTitleObservation() {
+        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
+            self?.detectUnreadFromTitle()
+        }
+    }
+
     func syncVisibilityPolyfill() {
         let isMedia = webView.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
         let flag = isMedia ? "true" : "false"
@@ -282,6 +292,18 @@ final class ContainerWindow: NSPanel {
     func setKeepVisible(_ keep: Bool) {
         let flag = keep ? "true" : "false"
         webView.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
+    }
+
+    func setPageHidden(_ hidden: Bool) {
+        let isMedia = webView.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
+        if isMedia && hidden {
+            // Media sites keep visible so audio continues
+            return
+        }
+        let js = hidden
+            ? "window.__fsKeepVisible=false;document.__realHidden=true;document.__realVisState='hidden';document.dispatchEvent(new Event('visibilitychange'))"
+            : "window.__fsKeepVisible=\(isMedia ? "true" : "false");document.__realHidden=false;document.__realVisState='visible';document.dispatchEvent(new Event('visibilitychange'))"
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     // MARK: - Profile Switching

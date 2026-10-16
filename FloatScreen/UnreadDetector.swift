@@ -16,6 +16,45 @@ enum UnreadDetector {
         title.hasPrefix("* ") || title.hasPrefix("! ") || title.hasPrefix("\u{25CF} ")
     }
 
+    static let whatsappScript: String = """
+    (function() {
+        'use strict';
+        if (location.hostname !== 'web.whatsapp.com') return;
+        if (window.__waBadgeInit) return;
+        window.__waBadgeInit = true;
+
+        function countUnread() {
+            var total = 0;
+            document.querySelectorAll(
+                '[data-testid="icon-unread-count"], ' +
+                'span[aria-label*="unread"]'
+            ).forEach(function(b) {
+                var n = parseInt(b.textContent);
+                if (!isNaN(n) && n > 0) total += n;
+            });
+            if (total === 0) {
+                var m = document.title.match(/\\((\\d+)\\)/);
+                if (m) total = parseInt(m[1]) || 0;
+            }
+            if (total > 0) {
+                try { window.webkit.messageHandlers.unread.postMessage({count: total}); } catch(e) {}
+            }
+        }
+
+        var observer = new MutationObserver(countUnread);
+        function start() {
+            var target = document.body || document.documentElement;
+            if (target) {
+                observer.observe(target, { childList: true, subtree: true, characterData: true });
+                setInterval(countUnread, 3000);
+                countUnread();
+            }
+        }
+        if (document.body) start();
+        else document.addEventListener('DOMContentLoaded', start);
+    })();
+    """
+
     static let slackScript: String = """
     (function() {
         'use strict';

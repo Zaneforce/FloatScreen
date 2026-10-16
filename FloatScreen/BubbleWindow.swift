@@ -126,6 +126,7 @@ final class BubbleWindow: NSPanel {
         case .leftMouseUp:
             if isDragging {
                 snapToEdge()
+                resolveCircleOverlaps()
                 savePosition()
             } else {
                 (NSApp.delegate as? AppDelegate)?.restoreFromBubble(self)
@@ -143,6 +144,18 @@ final class BubbleWindow: NSPanel {
 
     // MARK: - Positioning
 
+    var circleFrame: NSRect {
+        let pad = Self.padding
+        return NSRect(x: frame.origin.x + pad, y: frame.origin.y + pad,
+                      width: Self.circleSize, height: Self.circleSize)
+    }
+
+    private func circleFrameAt(_ origin: NSPoint) -> NSRect {
+        let pad = Self.padding
+        return NSRect(x: origin.x + pad, y: origin.y + pad,
+                      width: Self.circleSize, height: Self.circleSize)
+    }
+
     func placeAtSavedOrDefault() {
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame
@@ -152,34 +165,37 @@ final class BubbleWindow: NSPanel {
             origin.x = max(vis.minX, min(origin.x, vis.maxX - Self.windowSize))
             origin.y = max(vis.minY, min(origin.y, vis.maxY - Self.windowSize))
             setFrameOrigin(origin)
+            // Only nudge if another bubble's circle actually overlaps ours
+            resolveCircleOverlaps()
         } else {
             let x = vis.maxX - Self.windowSize - 8
             let y = vis.maxY - Self.topInset - Self.windowSize
             setFrameOrigin(NSPoint(x: x, y: y))
+            resolveCircleOverlaps()
         }
-        avoidCollisions()
         savePosition()
+        print("[Bubble] placed \(container?.pageTitle ?? "?") at \(frame.origin)")
     }
 
-    func avoidCollisions() {
+    private func resolveCircleOverlaps() {
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
         let others = appDelegate.bubbles.filter { $0 !== self && $0.isVisible }
-        var myFrame = frame
+        var origin = frame.origin
 
         for other in others {
             var attempts = 0
-            while myFrame.intersects(other.frame) && attempts < 15 {
-                myFrame.origin.y -= (Self.circleSize + Self.circleGap)
+            while circleFrameAt(origin).intersects(other.circleFrame) && attempts < 15 {
+                origin.y -= (Self.circleSize + Self.circleGap)
                 attempts += 1
             }
         }
 
         if let vis = NSScreen.main?.visibleFrame {
-            myFrame.origin.x = max(vis.minX, min(myFrame.origin.x, vis.maxX - Self.windowSize))
-            myFrame.origin.y = max(vis.minY, min(myFrame.origin.y, vis.maxY - Self.windowSize))
+            origin.x = max(vis.minX, min(origin.x, vis.maxX - Self.windowSize))
+            origin.y = max(vis.minY, min(origin.y, vis.maxY - Self.windowSize))
         }
 
-        setFrameOrigin(myFrame.origin)
+        setFrameOrigin(origin)
     }
 
     func savePosition() {

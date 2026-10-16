@@ -149,6 +149,13 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
             forMainFrameOnly: true
         )
         ucc.addUserScript(slackScript)
+
+        let waScript = WKUserScript(
+            source: UnreadDetector.whatsappScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        ucc.addUserScript(waScript)
     }
 
     static func applyUserAgent(to webView: WKWebView, mobile: Bool, host: String? = nil) {

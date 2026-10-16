@@ -91,7 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func minimizeToBubble(_ container: ContainerWindow) {
         container.savedFrameBeforeMinimize = container.frame
-        // Keep audio playing by default when minimized (visibility polyfill stays on)
+        container.setPageHidden(true)
         container.orderOut(nil)
 
         let bubble = BubbleWindow(container: container)
@@ -115,15 +115,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let targetFrame = container.savedFrameBeforeMinimize ?? container.frame
         container.savedFrameBeforeMinimize = nil
 
-        container.setFrame(bubble.frame, display: false)
+        // Restore at full size first, then animate from bubble position
+        container.setFrame(targetFrame, display: false)
         container.orderFront(nil)
 
-        NSAnimationContext.runAnimationGroup { ctx in
+        // Force WKWebView to lay out at full size
+        container.webView.frame = container.contentView?.bounds ?? targetFrame
+        container.contentView?.layoutSubtreeIfNeeded()
+        container.webView.setNeedsDisplay(container.webView.bounds)
+
+        // Animate from bubble position
+        container.setFrame(NSRect(origin: bubble.frame.origin,
+                                   size: NSSize(width: BubbleWindow.windowSize,
+                                                height: BubbleWindow.windowSize)),
+                           display: false)
+        NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.3
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             container.animator().setFrame(targetFrame, display: true)
-        }
+        }, completionHandler: {
+            // Final relayout after animation
+            container.webView.frame = container.contentView?.bounds ?? targetFrame
+            container.contentView?.layoutSubtreeIfNeeded()
+            container.webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'))",
+                                                  completionHandler: nil)
+        })
 
+        container.setPageHidden(false)
         NSApp.activate(ignoringOtherApps: true)
         container.makeKeyAndOrderFront(nil)
 
