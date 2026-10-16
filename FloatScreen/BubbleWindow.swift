@@ -3,8 +3,9 @@ import AppKit
 final class BubbleWindow: NSPanel {
     static let circleSize: CGFloat = 56
     static let ringWidth: CGFloat = 3
+    static let padding: CGFloat = 4
     static let badgeOverhang: CGFloat = 14
-    static let windowSize: CGFloat = circleSize + badgeOverhang
+    static let windowSize: CGFloat = circleSize + padding * 2 + badgeOverhang
     static let circleGap: CGFloat = 12
     static let topInset: CGFloat = 140
 
@@ -335,45 +336,56 @@ private class BubbleContentView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let owner else { return }
+        guard let owner, let ctx = NSGraphicsContext.current?.cgContext else { return }
         let cs = BubbleWindow.circleSize
         let rw = BubbleWindow.ringWidth
-        let ws = BubbleWindow.windowSize
+        let pad = BubbleWindow.padding
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let profileColor = owner.container?.profile.color ?? .controlAccentColor
 
-        // Center the circle within the window, offset slightly for badge room
-        let circleRect = NSRect(
-            x: floor((ws - cs) / 2),
-            y: floor((ws - cs) / 2) - 2,
-            width: cs, height: cs
-        )
+        // Backing scale for pixel alignment
+        let scale = window?.backingScaleFactor ?? 2.0
+        func align(_ v: CGFloat) -> CGFloat { (v * scale).rounded() / scale }
 
-        // Shadow
+        // Perfectly square circle rect, padded from edges so shadow isn't clipped
+        let origin = align(pad)
+        let circleRect = NSRect(x: origin, y: origin, width: cs, height: cs)
+        let center = NSPoint(x: circleRect.midX, y: circleRect.midY)
+
+        ctx.setShouldAntialias(true)
+
+        // Drop shadow on background fill
         let shadow = NSShadow()
         shadow.shadowColor = .black.withAlphaComponent(0.25)
         shadow.shadowBlurRadius = 4
         shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.set()
 
-        // Ring
-        let ringPath = NSBezierPath(ovalIn: circleRect)
-        profileColor.setFill()
-        ringPath.fill()
-
-        NSShadow().set()
-
-        // Inner circle
-        let innerRect = circleRect.insetBy(dx: rw, dy: rw)
-        let innerPath = NSBezierPath(ovalIn: innerRect)
+        // Background fill for shadow (filled circle behind everything)
         let bgColor: NSColor = isDark
             ? NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
             : .white
         bgColor.setFill()
+        NSBezierPath(ovalIn: circleRect).fill()
+
+        NSShadow().set()
+
+        // Inner background (same color, drawn inside the ring area)
+        let innerRect = circleRect.insetBy(dx: rw, dy: rw)
+        let innerPath = NSBezierPath(ovalIn: innerRect)
+        bgColor.setFill()
         innerPath.fill()
 
+        // Ring: stroke a circle inset by half the line width for even thickness
+        let ringInset = rw / 2
+        let ringRect = circleRect.insetBy(dx: ringInset, dy: ringInset)
+        let ringPath = NSBezierPath(ovalIn: ringRect)
+        ringPath.lineWidth = rw
+        profileColor.setStroke()
+        ringPath.stroke()
+
         // Favicon clipped to inner circle
-        NSGraphicsContext.current?.cgContext.saveGState()
+        ctx.saveGState()
         innerPath.addClip()
 
         let iconDiameter = innerRect.width * 0.55
@@ -384,11 +396,11 @@ private class BubbleContentView: NSView {
             if aspect > 1 { drawH = drawW / aspect }
             else { drawW = drawH * aspect }
             let iconRect = NSRect(
-                x: innerRect.midX - drawW / 2,
-                y: innerRect.midY - drawH / 2,
-                width: drawW, height: drawH
+                x: align(center.x - drawW / 2),
+                y: align(center.y - drawH / 2),
+                width: align(drawW), height: align(drawH)
             )
-            NSGraphicsContext.current?.imageInterpolation = .high
+            ctx.interpolationQuality = .high
             favicon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
         } else {
             let letter = String(owner.container?.pageTitle.prefix(1) ?? "?")
@@ -399,14 +411,14 @@ private class BubbleContentView: NSView {
             let attrStr = NSAttributedString(string: letter, attributes: attrs)
             let strSize = attrStr.size()
             attrStr.draw(at: NSPoint(
-                x: innerRect.midX - strSize.width / 2,
-                y: innerRect.midY - strSize.height / 2
+                x: align(center.x - strSize.width / 2),
+                y: align(center.y - strSize.height / 2)
             ))
         }
 
-        NSGraphicsContext.current?.cgContext.restoreGState()
+        ctx.restoreGState()
 
-        // Badge
+        // Badge at top-right of circle
         if owner.badgeCount > 0 || owner.badgeDot {
             let badgeCenter = NSPoint(
                 x: circleRect.maxX - cs * 0.08,
