@@ -360,15 +360,22 @@ extension WebViewConfig {
         var _el = null;
 
         var s = document.createElement('style');
-        s.textContent = '.__fs_fill{position:fixed!important;top:0!important;left:0!important;' +
+        s.textContent =
+            '.__fs_fill{position:fixed!important;top:0!important;left:0!important;' +
             'width:100vw!important;height:100vh!important;z-index:2147483647!important;' +
             'background:#000!important;margin:0!important;padding:0!important;' +
-            'border:none!important;transform:none!important;object-fit:contain!important;}' +
+            'border:none!important;transform:none!important;object-fit:contain!important;' +
+            'max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;}' +
+            '.__fs_ancestor{transform:none!important;filter:none!important;contain:none!important;' +
+            'will-change:auto!important;overflow:visible!important;clip:auto!important;' +
+            'clip-path:none!important;perspective:none!important;position:static!important;' +
+            'z-index:auto!important;}' +
             '.__fs_exit_btn{position:fixed!important;top:8px!important;right:8px!important;' +
             'z-index:2147483647!important;background:rgba(0,0,0,0.7)!important;color:#fff!important;' +
             'border:none!important;border-radius:4px!important;padding:4px 12px!important;' +
             'font:13px -apple-system,sans-serif!important;cursor:pointer!important;}';
         (document.head || document.documentElement).appendChild(s);
+        var _styleObserver = null;
 
         var _reqFS = Element.prototype.requestFullscreen;
         var _reqWK = Element.prototype.webkitRequestFullscreen;
@@ -386,13 +393,66 @@ extension WebViewConfig {
             t.dispatchEvent(new Event('webkitfullscreenchange', {bubbles:true}));
         }
 
-        function enter(el) {
+        function promoteTarget(el) {
+            // For YouTube, promote the player container so controls stay visible
+            if (el.tagName === 'VIDEO') {
+                var container = el.closest('.html5-video-player') ||
+                                el.closest('#player-container-id') ||
+                                el.closest('[id*="player"]');
+                if (container) return container;
+            }
+            return el;
+        }
+
+        function neutralizeAncestors(el) {
+            var node = el.parentElement;
+            while (node && node !== document.body && node !== document.documentElement) {
+                node.classList.add('__fs_ancestor');
+                node = node.parentElement;
+            }
+        }
+
+        function restoreAncestors() {
+            document.querySelectorAll('.__fs_ancestor').forEach(function(n) {
+                n.classList.remove('__fs_ancestor');
+            });
+        }
+
+        function forceStyles(el) {
+            el.style.setProperty('width', '100vw', 'important');
+            el.style.setProperty('height', '100vh', 'important');
+            el.style.setProperty('left', '0', 'important');
+            el.style.setProperty('top', '0', 'important');
+            el.style.setProperty('position', 'fixed', 'important');
+            el.style.setProperty('z-index', '2147483647', 'important');
+            el.style.setProperty('max-width', 'none', 'important');
+            el.style.setProperty('max-height', 'none', 'important');
+        }
+
+        function enter(requestedEl) {
             if (_el) exit();
+            var el = promoteTarget(requestedEl);
             _el = el;
             el.classList.add('__fs_fill');
+            forceStyles(el);
+            neutralizeAncestors(el);
+
+            // Watch for YouTube re-applying inline styles
+            if (_styleObserver) _styleObserver.disconnect();
+            _styleObserver = new MutationObserver(function() { forceStyles(el); });
+            _styleObserver.observe(el, { attributes: true, attributeFilter: ['style'] });
+            // Also watch the video inside a promoted container
+            if (el !== requestedEl) {
+                _styleObserver.observe(requestedEl, { attributes: true, attributeFilter: ['style'] });
+                forceStyles(requestedEl);
+                requestedEl.style.setProperty('object-fit', 'contain', 'important');
+                requestedEl.style.setProperty('width', '100%', 'important');
+                requestedEl.style.setProperty('height', '100%', 'important');
+            }
+
             fire(el); fire(document);
-            if (el.tagName === 'VIDEO') {
-                el.dispatchEvent(new Event('webkitbeginfullscreen'));
+            if (requestedEl.tagName === 'VIDEO') {
+                requestedEl.dispatchEvent(new Event('webkitbeginfullscreen'));
             }
             if (window.__fsOrientation) {
                 window.__fsOrientation._angle = 90;
@@ -406,13 +466,19 @@ extension WebViewConfig {
             if (!_el) return;
             var el = _el;
             _el = null;
+            if (_styleObserver) { _styleObserver.disconnect(); _styleObserver = null; }
             el.classList.remove('__fs_fill');
+            el.style.removeProperty('width'); el.style.removeProperty('height');
+            el.style.removeProperty('left'); el.style.removeProperty('top');
+            el.style.removeProperty('position'); el.style.removeProperty('z-index');
+            el.style.removeProperty('max-width'); el.style.removeProperty('max-height');
+            restoreAncestors();
             var exitBtn = document.getElementById('__fs_exit_btn');
             if (exitBtn) exitBtn.remove();
             fire(el); fire(document);
-            if (el.tagName === 'VIDEO') {
-                el.dispatchEvent(new Event('webkitendfullscreen'));
-            }
+            // Find video descendant for events
+            var vid = el.tagName === 'VIDEO' ? el : el.querySelector('video');
+            if (vid) vid.dispatchEvent(new Event('webkitendfullscreen'));
             if (window.__fsOrientation) {
                 window.__fsOrientation._angle = 0;
                 window.__fsOrientation._type = 'portrait-primary';
@@ -502,6 +568,24 @@ extension WebViewConfig {
                 });
             } catch(e) {}
         }
+
+        // Synthesize touch events from mouse clicks so YouTube mobile controls respond
+        document.addEventListener('mousedown', function(e) {
+            if (navigator.maxTouchPoints > 0) {
+                var t = new Touch({identifier:1, target:e.target, clientX:e.clientX, clientY:e.clientY,
+                    pageX:e.pageX, pageY:e.pageY, screenX:e.screenX, screenY:e.screenY});
+                e.target.dispatchEvent(new TouchEvent('touchstart', {touches:[t], targetTouches:[t],
+                    changedTouches:[t], bubbles:true, cancelable:true}));
+            }
+        }, true);
+        document.addEventListener('mouseup', function(e) {
+            if (navigator.maxTouchPoints > 0) {
+                var t = new Touch({identifier:1, target:e.target, clientX:e.clientX, clientY:e.clientY,
+                    pageX:e.pageX, pageY:e.pageY, screenX:e.screenX, screenY:e.screenY});
+                e.target.dispatchEvent(new TouchEvent('touchend', {touches:[], targetTouches:[],
+                    changedTouches:[t], bubbles:true, cancelable:true}));
+            }
+        }, true);
 
         // Document fullscreen properties
         Object.defineProperty(document, 'fullscreenElement', {
