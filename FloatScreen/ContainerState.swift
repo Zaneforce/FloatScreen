@@ -17,6 +17,7 @@ struct ContainerState: Codable {
     var isMinimized: Bool?
     var bubbleX: Double?
     var bubbleY: Double?
+    var bubbleEdge: String?
     var soundMode: String?
 }
 

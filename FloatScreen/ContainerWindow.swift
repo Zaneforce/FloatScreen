@@ -38,6 +38,8 @@ final class ContainerWindow: NSPanel {
 
     var soundMode: SoundMode = .floatScreenSound
     var savedFrameBeforeMinimize: NSRect?
+    var savedBubbleOrigin: NSPoint?
+    var savedBubbleEdge: String?
     private var zoomHideTimer: Timer?
 
     private static let slackHosts = ["app.slack.com", "slack.com"]
@@ -476,6 +478,7 @@ final class ContainerWindow: NSPanel {
             isMinimized: bubble != nil,
             bubbleX: bubble.map { Double($0.frame.origin.x) },
             bubbleY: bubble.map { Double($0.frame.origin.y) },
+            bubbleEdge: savedBubbleEdge,
             soundMode: soundMode.rawValue
         )
     }

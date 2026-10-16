@@ -31,17 +31,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 if state.isMinimized == true {
                     container.savedFrameBeforeMinimize = container.frame
-                    let bubble = BubbleWindow(container: container)
                     if let bx = state.bubbleX, let by = state.bubbleY {
-                        bubble.setFrameOrigin(NSPoint(x: bx, y: by))
+                        container.savedBubbleOrigin = NSPoint(x: bx, y: by)
                     }
+                    container.savedBubbleEdge = state.bubbleEdge
+                    let bubble = BubbleWindow(container: container)
+                    bubble.placeAtSavedOrDefault()
                     bubbles.append(bubble)
                     bubble.orderFront(nil)
                 } else {
                     container.orderFront(nil)
                 }
             }
-            restackBubbles()
         }
 
         NotificationCenter.default.addObserver(
@@ -99,7 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             bubble.setBadgeDot()
         }
         bubbles.append(bubble)
-        restackBubbles()
+        bubble.placeAtSavedOrDefault()
         bubble.orderFront(nil)
         menuBarController?.rebuildMenu()
     }
@@ -125,7 +126,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         container.makeKeyAndOrderFront(nil)
 
-        restackBubbles()
         menuBarController?.rebuildMenu()
     }
 
@@ -140,14 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubble.orderOut(nil)
         container.close()
 
-        restackBubbles()
         menuBarController?.rebuildMenu()
-    }
-
-    private func restackBubbles() {
-        for (index, bubble) in bubbles.enumerated() {
-            bubble.updatePosition(index: index)
-        }
     }
 
     // MARK: - Recently Closed

@@ -121,7 +121,10 @@ final class BubbleWindow: NSPanel {
                 setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
             }
         case .leftMouseUp:
-            if isDragging { snapToEdge() } else {
+            if isDragging {
+                snapToEdge()
+                saveBubblePosition()
+            } else {
                 (NSApp.delegate as? AppDelegate)?.restoreFromBubble(self)
             }
             dragStart = nil
@@ -137,12 +140,49 @@ final class BubbleWindow: NSPanel {
 
     // MARK: - Positioning
 
-    func updatePosition(index: Int) {
+    func placeAtSavedOrDefault() {
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame
-        let x = vis.maxX - Self.windowSize - Self.spacing
-        let y = vis.maxY - CGFloat(index + 1) * (Self.circleSize + Self.spacing) - Self.badgeOverhang
-        setFrameOrigin(NSPoint(x: x, y: y))
+
+        if let saved = container?.savedBubbleOrigin {
+            var origin = saved
+            origin.x = max(vis.minX, min(origin.x, vis.maxX - Self.windowSize))
+            origin.y = max(vis.minY, min(origin.y, vis.maxY - Self.windowSize))
+            setFrameOrigin(origin)
+        } else {
+            let x = vis.maxX - Self.windowSize - Self.spacing
+            let y = vis.maxY - Self.windowSize - Self.spacing
+            setFrameOrigin(NSPoint(x: x, y: y))
+        }
+        avoidCollisions()
+    }
+
+    func avoidCollisions() {
+        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
+        let others = appDelegate.bubbles.filter { $0 !== self && $0.isVisible }
+        var myFrame = frame
+
+        for other in others {
+            var attempts = 0
+            while myFrame.intersects(other.frame) && attempts < 10 {
+                myFrame.origin.y -= (Self.circleSize + Self.spacing)
+                attempts += 1
+            }
+        }
+
+        if let vis = NSScreen.main?.visibleFrame {
+            myFrame.origin.x = max(vis.minX, min(myFrame.origin.x, vis.maxX - Self.windowSize))
+            myFrame.origin.y = max(vis.minY, min(myFrame.origin.y, vis.maxY - Self.windowSize))
+        }
+
+        setFrameOrigin(myFrame.origin)
+    }
+
+    private func saveBubblePosition() {
+        container?.savedBubbleOrigin = frame.origin
+        guard let screen = NSScreen.main else { return }
+        let vis = screen.visibleFrame
+        container?.savedBubbleEdge = frame.midX > vis.midX ? "right" : "left"
     }
 
     func updateContent() {
