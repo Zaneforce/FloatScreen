@@ -40,7 +40,7 @@ final class ContainerWindow: NSPanel {
         super.init(
             contentRect: rect,
             styleMask: [.titled, .closable, .resizable, .miniaturizable,
-                        .fullSizeContentView, .nonactivatingPanel],
+                        .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -120,6 +120,16 @@ final class ContainerWindow: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown || event.type == .rightMouseDown {
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            makeKeyAndOrderFront(nil)
+        }
+        super.sendEvent(event)
+    }
 
     var currentURL: URL? { webView.url }
     var pageTitle: String { webView.title ?? webView.url?.host ?? "New Tab" }
@@ -312,6 +322,8 @@ private class HoverContentView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

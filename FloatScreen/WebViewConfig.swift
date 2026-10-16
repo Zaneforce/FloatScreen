@@ -186,7 +186,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
 
         let popup = NSPanel(
             contentRect: popupRect,
-            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )

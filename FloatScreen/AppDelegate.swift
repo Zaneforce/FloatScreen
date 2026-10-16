@@ -50,8 +50,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func toggleAllContainers() {
         let anyVisible = containers.contains { $0.isVisible }
-        for c in containers {
-            if anyVisible { c.orderOut(nil) } else { c.orderFront(nil) }
+        if anyVisible {
+            for c in containers { c.orderOut(nil) }
+        } else {
+            for c in containers { c.orderFront(nil) }
+            NSApp.activate(ignoringOtherApps: true)
+            containers.last?.makeKeyAndOrderFront(nil)
         }
     }
 
