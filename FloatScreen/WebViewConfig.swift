@@ -491,14 +491,25 @@ extension WebViewConfig {
 // MARK: - Visibility Polyfill (prevents video pause on app deactivation)
 
 extension WebViewConfig {
+    static let mediaSiteHosts = [
+        "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+        "vimeo.com", "www.vimeo.com", "player.vimeo.com",
+        "twitch.tv", "www.twitch.tv",
+        "open.spotify.com",
+    ]
+
+    static func isMediaSite(host: String) -> Bool {
+        mediaSiteHosts.contains(host)
+    }
+
     static let visibilityPolyfill = """
     (function() {
         'use strict';
         if (window.__fsVisInit) return;
         window.__fsVisInit = true;
 
-        // Native controls this: true = keep page "visible", false = allow real state
-        window.__fsKeepVisible = true;
+        // Default OFF — native enables it only on media sites
+        window.__fsKeepVisible = false;
 
         Object.defineProperty(document, 'hidden', {
             get: function() { return window.__fsKeepVisible ? false : document.__realHidden || false; },
@@ -514,23 +525,14 @@ extension WebViewConfig {
             return window.__fsKeepVisible ? true : _origHasFocus();
         };
 
-        // Swallow visibilitychange events caused by app deactivation
         document.addEventListener('visibilitychange', function(e) {
-            if (window.__fsKeepVisible) {
-                e.stopImmediatePropagation();
-            }
+            if (window.__fsKeepVisible) { e.stopImmediatePropagation(); }
         }, true);
-
-        // Swallow window blur/pagehide that would pause media
         window.addEventListener('blur', function(e) {
-            if (window.__fsKeepVisible) {
-                e.stopImmediatePropagation();
-            }
+            if (window.__fsKeepVisible) { e.stopImmediatePropagation(); }
         }, true);
         window.addEventListener('pagehide', function(e) {
-            if (window.__fsKeepVisible) {
-                e.stopImmediatePropagation();
-            }
+            if (window.__fsKeepVisible) { e.stopImmediatePropagation(); }
         }, true);
     })();
     """

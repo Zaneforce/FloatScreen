@@ -196,27 +196,64 @@ final class BubbleWindow: NSPanel {
 
     // MARK: - Favicon
 
+    private var faviconHost: String?
+
     private func fetchFavicon() {
-        guard !faviconLocked, let webView = container?.webView else { return }
+        guard let webView = container?.webView else { return }
+        let currentHost = webView.url?.host
+
+        if let fh = faviconHost, fh != currentHost {
+            faviconLocked = false
+            faviconImage = nil
+        }
+        guard !faviconLocked else { return }
+        faviconHost = currentHost
+
+        // Prefer apple-touch-icon or manifest icon (badge-free) for known sites,
+        // fall back to standard favicon
         let js = """
         (function(){
-            var link = document.querySelector('link[rel*="icon"]');
-            return link ? link.href : (location.origin + '/favicon.ico');
+            var touch = document.querySelector('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
+            if (touch) return touch.href;
+            var manifest = document.querySelector('link[rel="icon"][sizes]');
+            if (manifest) return manifest.href;
+            var icon = document.querySelector('link[rel*="icon"]');
+            if (icon) return icon.href;
+            return location.origin + '/apple-touch-icon.png';
         })()
         """
         webView.evaluateJavaScript(js) { [weak self] result, _ in
             guard let self, !self.faviconLocked else { return }
             guard let urlStr = result as? String, let url = URL(string: urlStr) else { return }
-            URLSession.shared.dataTask(with: url) { data, _, _ in
-                guard let data, let img = NSImage(data: data), img.isValid else { return }
+            self.downloadFavicon(from: url, fallbackHost: currentHost)
+        }
+    }
+
+    private func downloadFavicon(from url: URL, fallbackHost: String?) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if let data, ok >= 200, ok < 400, let img = NSImage(data: data), img.isValid {
                 DispatchQueue.main.async {
-                    guard !self.faviconLocked else { return }
+                    guard let self, !self.faviconLocked else { return }
                     self.faviconImage = img
                     self.faviconLocked = true
                     (self.contentView as? BubbleContentView)?.needsDisplay = true
                 }
-            }.resume()
-        }
+            } else if let host = fallbackHost {
+                // apple-touch-icon failed, try /favicon.ico
+                let fallback = URL(string: "https://\(host)/favicon.ico")
+                guard let fallback, fallback != url else { return }
+                URLSession.shared.dataTask(with: fallback) { data, _, _ in
+                    guard let data, let img = NSImage(data: data), img.isValid else { return }
+                    DispatchQueue.main.async {
+                        guard let self, !self.faviconLocked else { return }
+                        self.faviconImage = img
+                        self.faviconLocked = true
+                        (self.contentView as? BubbleContentView)?.needsDisplay = true
+                    }
+                }.resume()
+            }
+        }.resume()
     }
 
     // MARK: - Edge Snapping

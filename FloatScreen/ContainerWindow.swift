@@ -199,6 +199,7 @@ final class ContainerWindow: NSPanel {
         title = pageTitle
         detectUnreadFromTitle()
         applySavedZoom()
+        syncVisibilityPolyfill()
     }
 
     func updateUnreadCount(_ count: Int) {
@@ -246,6 +247,12 @@ final class ContainerWindow: NSPanel {
 
     func setClickThrough(_ enabled: Bool) {
         ignoresMouseEvents = enabled
+    }
+
+    func syncVisibilityPolyfill() {
+        let isMedia = webView.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
+        let flag = isMedia ? "true" : "false"
+        webView.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
     }
 
     func setKeepVisible(_ keep: Bool) {
