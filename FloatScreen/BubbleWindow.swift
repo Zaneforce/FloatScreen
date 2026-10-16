@@ -9,6 +9,7 @@ final class BubbleWindow: NSPanel {
 
     weak var container: ContainerWindow?
     fileprivate var faviconImage: NSImage?
+    fileprivate var faviconLocked = false
     fileprivate var badgeCount: Int = 0
     fileprivate var badgeDot: Bool = false
     private var dragStart: NSPoint?
@@ -196,7 +197,7 @@ final class BubbleWindow: NSPanel {
     // MARK: - Favicon
 
     private func fetchFavicon() {
-        guard let webView = container?.webView else { return }
+        guard !faviconLocked, let webView = container?.webView else { return }
         let js = """
         (function(){
             var link = document.querySelector('link[rel*="icon"]');
@@ -204,12 +205,15 @@ final class BubbleWindow: NSPanel {
         })()
         """
         webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self, !self.faviconLocked else { return }
             guard let urlStr = result as? String, let url = URL(string: urlStr) else { return }
             URLSession.shared.dataTask(with: url) { data, _, _ in
                 guard let data, let img = NSImage(data: data), img.isValid else { return }
                 DispatchQueue.main.async {
-                    self?.faviconImage = img
-                    (self?.contentView as? BubbleContentView)?.needsDisplay = true
+                    guard !self.faviconLocked else { return }
+                    self.faviconImage = img
+                    self.faviconLocked = true
+                    (self.contentView as? BubbleContentView)?.needsDisplay = true
                 }
             }.resume()
         }

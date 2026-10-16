@@ -248,6 +248,11 @@ final class ContainerWindow: NSPanel {
         ignoresMouseEvents = enabled
     }
 
+    func setKeepVisible(_ keep: Bool) {
+        let flag = keep ? "true" : "false"
+        webView.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
+    }
+
     // MARK: - Profile Switching
 
     func switchProfile(to newProfile: Profile) {

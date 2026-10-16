@@ -91,6 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func minimizeToBubble(_ container: ContainerWindow) {
         container.savedFrameBeforeMinimize = container.frame
+        // Keep audio playing by default when minimized (visibility polyfill stays on)
         container.orderOut(nil)
 
         let bubble = BubbleWindow(container: container)

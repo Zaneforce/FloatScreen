@@ -126,6 +126,13 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         )
         ucc.addUserScript(notifScript)
 
+        let visScript = WKUserScript(
+            source: Self.visibilityPolyfill,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        ucc.addUserScript(visScript)
+
         ContentBlocker.shared.apply(to: ucc)
 
         let ytScript = WKUserScript(
@@ -375,6 +382,9 @@ extension WebViewConfig {
             _el = el;
             el.classList.add('__fs_fill');
             fire(el); fire(document);
+            if (el.tagName === 'VIDEO') {
+                el.dispatchEvent(new Event('webkitbeginfullscreen'));
+            }
             try { window.webkit.messageHandlers.fullscreen.postMessage({action:'enter'}); } catch(e) {}
         }
 
@@ -384,9 +394,13 @@ extension WebViewConfig {
             _el = null;
             el.classList.remove('__fs_fill');
             fire(el); fire(document);
+            if (el.tagName === 'VIDEO') {
+                el.dispatchEvent(new Event('webkitendfullscreen'));
+            }
             try { window.webkit.messageHandlers.fullscreen.postMessage({action:'exit'}); } catch(e) {}
         }
 
+        // Standard Fullscreen API
         Element.prototype.requestFullscreen = function(o) {
             if (!window.__fsFake) return _reqFS ? _reqFS.call(this, o) : Promise.resolve();
             enter(this); return Promise.resolve();
@@ -413,6 +427,37 @@ extension WebViewConfig {
             exit();
         };
 
+        // iOS-style video fullscreen API (m.youtube.com uses this)
+        var _vidEnterFS = HTMLVideoElement.prototype.webkitEnterFullscreen;
+        var _vidEnterFS2 = HTMLVideoElement.prototype.webkitEnterFullScreen;
+        var _vidExitFS = HTMLVideoElement.prototype.webkitExitFullscreen;
+        var _vidExitFS2 = HTMLVideoElement.prototype.webkitExitFullScreen;
+
+        HTMLVideoElement.prototype.webkitEnterFullscreen = function() {
+            if (!window.__fsFake) { if (_vidEnterFS) _vidEnterFS.call(this); return; }
+            enter(this);
+        };
+        HTMLVideoElement.prototype.webkitEnterFullScreen = function() {
+            if (!window.__fsFake) { if (_vidEnterFS2) _vidEnterFS2.call(this); return; }
+            enter(this);
+        };
+        HTMLVideoElement.prototype.webkitExitFullscreen = function() {
+            if (!window.__fsFake) { if (_vidExitFS) _vidExitFS.call(this); return; }
+            exit();
+        };
+        HTMLVideoElement.prototype.webkitExitFullScreen = function() {
+            if (!window.__fsFake) { if (_vidExitFS2) _vidExitFS2.call(this); return; }
+            exit();
+        };
+
+        Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsFullscreen', {
+            get: function() { return true; }, configurable: true
+        });
+        Object.defineProperty(HTMLVideoElement.prototype, 'webkitDisplayingFullscreen', {
+            get: function() { return _el === this; }, configurable: true
+        });
+
+        // Document fullscreen properties
         Object.defineProperty(document, 'fullscreenElement', {
             get: function() { return window.__fsFake ? _el : null; }, configurable: true
         });
@@ -437,6 +482,54 @@ extension WebViewConfig {
                 e.preventDefault();
                 e.stopPropagation();
                 exit();
+            }
+        }, true);
+    })();
+    """
+}
+
+// MARK: - Visibility Polyfill (prevents video pause on app deactivation)
+
+extension WebViewConfig {
+    static let visibilityPolyfill = """
+    (function() {
+        'use strict';
+        if (window.__fsVisInit) return;
+        window.__fsVisInit = true;
+
+        // Native controls this: true = keep page "visible", false = allow real state
+        window.__fsKeepVisible = true;
+
+        Object.defineProperty(document, 'hidden', {
+            get: function() { return window.__fsKeepVisible ? false : document.__realHidden || false; },
+            configurable: true
+        });
+        Object.defineProperty(document, 'visibilityState', {
+            get: function() { return window.__fsKeepVisible ? 'visible' : (document.__realVisState || 'visible'); },
+            configurable: true
+        });
+
+        var _origHasFocus = document.hasFocus.bind(document);
+        document.hasFocus = function() {
+            return window.__fsKeepVisible ? true : _origHasFocus();
+        };
+
+        // Swallow visibilitychange events caused by app deactivation
+        document.addEventListener('visibilitychange', function(e) {
+            if (window.__fsKeepVisible) {
+                e.stopImmediatePropagation();
+            }
+        }, true);
+
+        // Swallow window blur/pagehide that would pause media
+        window.addEventListener('blur', function(e) {
+            if (window.__fsKeepVisible) {
+                e.stopImmediatePropagation();
+            }
+        }, true);
+        window.addEventListener('pagehide', function(e) {
+            if (window.__fsKeepVisible) {
+                e.stopImmediatePropagation();
             }
         }, true);
     })();
