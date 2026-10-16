@@ -61,12 +61,29 @@ final class ToolbarView: NSView {
         urlField.selectText(nil)
     }
 
-    func updateMobileMode(_ isMobile: Bool) {
-        mobileButton.contentTintColor = isMobile ? .controlAccentColor : .secondaryLabelColor
-        mobileButton.image = NSImage(
-            systemSymbolName: isMobile ? "iphone" : "iphone.slash",
-            accessibilityDescription: isMobile ? "Mobile mode on" : "Mobile mode off"
-        )
+    func updateMobileMode(_ isMobile: Bool, disabled: Bool = false) {
+        mobileButton.isEnabled = !disabled
+        if disabled {
+            mobileButton.contentTintColor = .tertiaryLabelColor
+            mobileButton.image = NSImage(systemSymbolName: "iphone.slash",
+                                          accessibilityDescription: "Always desktop site")
+            mobileButton.toolTip = "This site is in the always-desktop list"
+        } else {
+            mobileButton.contentTintColor = isMobile ? .controlAccentColor : .secondaryLabelColor
+            mobileButton.image = NSImage(
+                systemSymbolName: isMobile ? "iphone" : "iphone.slash",
+                accessibilityDescription: isMobile ? "Mobile mode on" : "Mobile mode off"
+            )
+            mobileButton.toolTip = nil
+        }
+    }
+
+    func showZoomLevel(_ level: CGFloat) {
+        let pct = Int(round(level * 100))
+        urlField.placeholderString = "\(pct)%"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.urlField.placeholderString = "Search or enter URL"
+        }
     }
 
     func setProfile(_ profile: Profile) {

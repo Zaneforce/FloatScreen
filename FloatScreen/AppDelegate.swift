@@ -244,6 +244,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         navMenuItem.submenu = navMenu
         mainMenu.addItem(navMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(NSMenuItem(title: "Zoom In",
+                                    action: #selector(handleZoomIn),
+                                    keyEquivalent: "="))
+        viewMenu.addItem(NSMenuItem(title: "Zoom Out",
+                                    action: #selector(handleZoomOut),
+                                    keyEquivalent: "-"))
+        viewMenu.addItem(NSMenuItem(title: "Actual Size",
+                                    action: #selector(handleZoomReset),
+                                    keyEquivalent: "0"))
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         NSApp.mainMenu = mainMenu
     }
 
@@ -282,6 +296,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleForward() {
         activeContainer?.webView.goForward()
+    }
+
+    @objc private func handleZoomIn() {
+        activeContainer?.zoomIn()
+    }
+
+    @objc private func handleZoomOut() {
+        activeContainer?.zoomOut()
+    }
+
+    @objc private func handleZoomReset() {
+        activeContainer?.zoomReset()
     }
 }
 

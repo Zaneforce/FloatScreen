@@ -157,6 +157,28 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
 
+        // Zoom submenu
+        let zoomItem = NSMenuItem(title: "Zoom", action: nil, keyEquivalent: "")
+        let zoomMenu = NSMenu()
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn), keyEquivalent: "")
+        zoomInItem.target = self
+        zoomMenu.addItem(zoomInItem)
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut), keyEquivalent: "")
+        zoomOutItem.target = self
+        zoomMenu.addItem(zoomOutItem)
+        let zoomResetItem = NSMenuItem(title: "Actual Size (100%)", action: #selector(zoomReset), keyEquivalent: "")
+        zoomResetItem.target = self
+        zoomMenu.addItem(zoomResetItem)
+        if let active = activeContainer {
+            zoomMenu.addItem(.separator())
+            let pct = Int(round(active.webView.pageZoom * 100))
+            let label = NSMenuItem(title: "Current: \(pct)%", action: nil, keyEquivalent: "")
+            label.isEnabled = false
+            zoomMenu.addItem(label)
+        }
+        zoomItem.submenu = zoomMenu
+        menu.addItem(zoomItem)
+
         // Mobile mode
         let mobileItem = NSMenuItem(
             title: "Mobile Mode",
@@ -179,6 +201,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             autoMobileItem.state = active.isAutoMobile ? .on : .off
         }
         menu.addItem(autoMobileItem)
+
+        // Always-desktop sites
+        let adSiteItem = NSMenuItem(title: "Always Desktop Sites", action: nil, keyEquivalent: "")
+        let adSiteMenu = NSMenu()
+        for site in WebViewConfig.alwaysDesktopSites {
+            let item = NSMenuItem(title: site, action: #selector(removeAlwaysDesktopSite(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = site
+            adSiteMenu.addItem(item)
+        }
+        adSiteMenu.addItem(.separator())
+        let addSiteItem = NSMenuItem(title: "Add Current Site\u{2026}", action: #selector(addAlwaysDesktopSite), keyEquivalent: "")
+        addSiteItem.target = self
+        adSiteMenu.addItem(addSiteItem)
+        adSiteItem.submenu = adSiteMenu
+        menu.addItem(adSiteItem)
 
         // Size presets
         let sizeItem = NSMenuItem(title: "Size Preset", action: nil, keyEquivalent: "")
@@ -393,6 +431,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             domains.insert(host)
         }
         ContentBlocker.shared.disabledDomains = domains
+        rebuildMenu()
+    }
+
+    @objc private func zoomIn() { activeContainer?.zoomIn() }
+    @objc private func zoomOut() { activeContainer?.zoomOut() }
+    @objc private func zoomReset() { activeContainer?.zoomReset() }
+
+    @objc private func addAlwaysDesktopSite() {
+        guard let host = activeContainer?.currentURL?.host else { return }
+        var sites = WebViewConfig.alwaysDesktopSites
+        guard !sites.contains(host) else { return }
+        sites.append(host)
+        WebViewConfig.alwaysDesktopSites = sites
+        activeContainer?.toolbarView.updateMobileMode(
+            activeContainer?.isMobileMode ?? false,
+            disabled: true
+        )
+        rebuildMenu()
+    }
+
+    @objc private func removeAlwaysDesktopSite(_ sender: NSMenuItem) {
+        guard let site = sender.representedObject as? String else { return }
+        var sites = WebViewConfig.alwaysDesktopSites
+        sites.removeAll { $0 == site }
+        WebViewConfig.alwaysDesktopSites = sites
         rebuildMenu()
     }
 

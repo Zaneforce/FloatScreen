@@ -23,6 +23,7 @@ final class ContainerWindow: NSPanel {
     private var autoMobileDebounceTimer: Timer?
 
     var savedFrameBeforeMinimize: NSRect?
+    private var zoomHideTimer: Timer?
 
     private var webViewTopConstraint: NSLayoutConstraint!
     private var containerView: NSView!
@@ -166,8 +167,10 @@ final class ContainerWindow: NSPanel {
     func webViewDidUpdate() {
         toolbarView.updateURL(webView.url?.absoluteString ?? "")
         toolbarView.updateNavigation(canGoBack: webView.canGoBack, canGoForward: webView.canGoForward)
+        toolbarView.updateMobileMode(isMobileMode, disabled: isAlwaysDesktopSite)
         title = pageTitle
         detectUnreadFromTitle()
+        applySavedZoom()
     }
 
     func updateUnreadCount(_ count: Int) {
@@ -278,12 +281,57 @@ final class ContainerWindow: NSPanel {
         }
     }
 
+    // MARK: - Page Zoom
+
+    func zoomIn() {
+        let steps = WebViewConfig.zoomSteps
+        let current = webView.pageZoom
+        if let next = steps.first(where: { $0 > current + 0.01 }) {
+            setZoom(next)
+        }
+    }
+
+    func zoomOut() {
+        let steps = WebViewConfig.zoomSteps
+        let current = webView.pageZoom
+        if let prev = steps.last(where: { $0 < current - 0.01 }) {
+            setZoom(prev)
+        }
+    }
+
+    func zoomReset() {
+        setZoom(1.0)
+    }
+
+    private func setZoom(_ level: CGFloat) {
+        webView.pageZoom = level
+        if let host = webView.url?.host {
+            WebViewConfig.saveZoom(level, for: host, profileId: profile.id)
+        }
+        toolbarView.showZoomLevel(level)
+    }
+
+    func applySavedZoom() {
+        guard let host = webView.url?.host else { return }
+        if let saved = WebViewConfig.savedZoom(for: host, profileId: profile.id) {
+            webView.pageZoom = saved
+        } else {
+            webView.pageZoom = 1.0
+        }
+    }
+
     // MARK: - Mobile Mode
 
+    var isAlwaysDesktopSite: Bool {
+        guard let host = webView.url?.host else { return false }
+        return WebViewConfig.isAlwaysDesktop(host: host)
+    }
+
     func setMobileMode(_ enabled: Bool) {
+        if enabled && isAlwaysDesktopSite { return }
         guard enabled != isMobileMode else { return }
         isMobileMode = enabled
-        toolbarView.updateMobileMode(enabled)
+        toolbarView.updateMobileMode(enabled, disabled: isAlwaysDesktopSite)
 
         WebViewConfig.applyUserAgent(to: webView, mobile: enabled)
 
@@ -316,6 +364,7 @@ final class ContainerWindow: NSPanel {
     }
 
     private func evaluateAutoMobile() {
+        guard !isAlwaysDesktopSite else { return }
         let w = frame.width
         if isMobileMode && w > Self.autoMobileOffThreshold {
             setMobileMode(false)

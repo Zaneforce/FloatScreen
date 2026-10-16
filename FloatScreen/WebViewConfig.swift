@@ -46,6 +46,48 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     // Per-domain UA overrides. Add entries here when a site needs a specific UA.
     static var siteUserAgentOverrides: [String: String] = [:]
 
+    // MARK: - Page Zoom
+
+    static let zoomSteps: [CGFloat] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5]
+
+    private static let zoomKey = "siteZoomLevels"
+
+    static func savedZoom(for host: String, profileId: UUID) -> CGFloat? {
+        guard let dict = UserDefaults.standard.dictionary(forKey: zoomKey) as? [String: Double] else { return nil }
+        return dict["\(profileId.uuidString):\(host)"].map { CGFloat($0) }
+    }
+
+    static func saveZoom(_ zoom: CGFloat, for host: String, profileId: UUID) {
+        var dict = (UserDefaults.standard.dictionary(forKey: zoomKey) as? [String: Double]) ?? [:]
+        dict["\(profileId.uuidString):\(host)"] = Double(zoom)
+        UserDefaults.standard.set(dict, forKey: zoomKey)
+    }
+
+    // MARK: - Always-Desktop Sites
+
+    private static let alwaysDesktopKey = "alwaysDesktopSites"
+    private static let defaultAlwaysDesktop = ["app.slack.com", "slack.com", "*.slack.com"]
+
+    static var alwaysDesktopSites: [String] {
+        get {
+            UserDefaults.standard.stringArray(forKey: alwaysDesktopKey) ?? defaultAlwaysDesktop
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: alwaysDesktopKey)
+        }
+    }
+
+    static func isAlwaysDesktop(host: String) -> Bool {
+        for pattern in alwaysDesktopSites {
+            if pattern == host { return true }
+            if pattern.hasPrefix("*.") {
+                let suffix = String(pattern.dropFirst(1))
+                if host.hasSuffix(suffix) || host == String(pattern.dropFirst(2)) { return true }
+            }
+        }
+        return false
+    }
+
     static func makeConfiguration(profile: Profile = .personal) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = ProfileManager.dataStore(for: profile)
