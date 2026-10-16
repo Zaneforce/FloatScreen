@@ -7,6 +7,7 @@ protocol ToolbarViewDelegate: AnyObject {
     func toolbarDidRequestReload()
     func toolbarDidNavigate(to urlString: String)
     func toolbarDidTogglePin(_ pinned: Bool)
+    func toolbarDidToggleMobileMode()
     func toolbarDidRequestSwitchProfile(relativeTo view: NSView)
 }
 
@@ -21,6 +22,7 @@ final class ToolbarView: NSView {
     private let forwardButton: BarButton
     private let reloadButton: BarButton
     private let pinButton: BarButton
+    private let mobileButton: BarButton
     private let profileBadge: BarButton
     private var isPinned = true
 
@@ -31,6 +33,7 @@ final class ToolbarView: NSView {
         forwardButton = BarButton()
         reloadButton = BarButton()
         pinButton = BarButton()
+        mobileButton = BarButton()
         profileBadge = BarButton()
         super.init(frame: frameRect)
         setup()
@@ -55,6 +58,14 @@ final class ToolbarView: NSView {
         urlField.selectText(nil)
     }
 
+    func updateMobileMode(_ isMobile: Bool) {
+        mobileButton.contentTintColor = isMobile ? .controlAccentColor : .secondaryLabelColor
+        mobileButton.image = NSImage(
+            systemSymbolName: isMobile ? "iphone" : "iphone.slash",
+            accessibilityDescription: isMobile ? "Mobile mode on" : "Mobile mode off"
+        )
+    }
+
     func setProfile(_ profile: Profile) {
         profileBadge.title = String(profile.name.prefix(1))
         profileBadge.contentTintColor = profile.color
@@ -76,6 +87,9 @@ final class ToolbarView: NSView {
         configureButton(reloadButton, symbol: "arrow.clockwise", action: #selector(reloadTapped))
         configureButton(pinButton, symbol: "pin.fill", action: #selector(pinTapped))
         pinButton.contentTintColor = .controlAccentColor
+
+        configureButton(mobileButton, symbol: "iphone.slash", action: #selector(mobileTapped))
+        mobileButton.contentTintColor = .secondaryLabelColor
 
         profileBadge.title = "P"
         profileBadge.font = .systemFont(ofSize: 10, weight: .bold)
@@ -99,7 +113,7 @@ final class ToolbarView: NSView {
         addSubview(urlField)
 
         let views = [closeButton, backButton, forwardButton, reloadButton,
-                     profileBadge, urlField, pinButton] as [NSView]
+                     profileBadge, urlField, mobileButton, pinButton] as [NSView]
         for v in views { v.translatesAutoresizingMaskIntoConstraints = false }
 
         NSLayoutConstraint.activate([
@@ -129,9 +143,14 @@ final class ToolbarView: NSView {
             profileBadge.heightAnchor.constraint(equalToConstant: 16),
 
             urlField.leadingAnchor.constraint(equalTo: profileBadge.trailingAnchor, constant: 4),
-            urlField.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -6),
+            urlField.trailingAnchor.constraint(equalTo: mobileButton.leadingAnchor, constant: -4),
             urlField.centerYAnchor.constraint(equalTo: centerYAnchor),
             urlField.heightAnchor.constraint(equalToConstant: 20),
+
+            mobileButton.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -2),
+            mobileButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mobileButton.widthAnchor.constraint(equalToConstant: 20),
+            mobileButton.heightAnchor.constraint(equalToConstant: 16),
 
             pinButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             pinButton.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -169,6 +188,10 @@ final class ToolbarView: NSView {
             accessibilityDescription: nil
         )
         delegate?.toolbarDidTogglePin(isPinned)
+    }
+
+    @objc private func mobileTapped() {
+        delegate?.toolbarDidToggleMobileMode()
     }
 
     @objc private func profileBadgeTapped() {

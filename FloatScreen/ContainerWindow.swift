@@ -16,8 +16,23 @@ final class ContainerWindow: NSPanel {
     private var isInContainerFullscreen = false
     private var toolbarWasVisibleBeforeFullscreen = true
 
+    private(set) var isMobileMode = false
+    var isAutoMobile = false
+    private static let autoMobileOnThreshold: CGFloat = 500
+    private static let autoMobileOffThreshold: CGFloat = 600
+    private var autoMobileDebounceTimer: Timer?
+
     private var webViewTopConstraint: NSLayoutConstraint!
     private var containerView: NSView!
+
+    private static let mobileDomainMap: [(mobile: String, desktop: String)] = [
+        ("m.youtube.com", "www.youtube.com"),
+        ("m.facebook.com", "www.facebook.com"),
+        ("m.twitter.com", "twitter.com"),
+        ("mobile.twitter.com", "twitter.com"),
+        ("m.reddit.com", "www.reddit.com"),
+        ("m.wikipedia.org", "en.wikipedia.org"),
+    ]
 
     init(id: UUID = UUID(), url: URL? = nil, state: ContainerState? = nil,
          profile: Profile? = nil) {
@@ -111,7 +126,19 @@ final class ContainerWindow: NSPanel {
             if !s.isAlwaysOnTop { level = .normal }
             if s.isToolbarAutoHidden { setToolbarAutoHidden(true, animated: false) }
             fullscreenFillsContainer = s.fullscreenFillsContainer ?? true
+            isMobileMode = s.isMobileMode ?? false
+            isAutoMobile = s.isAutoMobile ?? false
+            if isMobileMode {
+                webView.customUserAgent = WebViewConfig.mobileUserAgent
+            }
         }
+
+        toolbarView.updateMobileMode(isMobileMode)
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidResize),
+            name: NSWindow.didResizeNotification, object: self
+        )
 
         if let url {
             webView.load(URLRequest(url: url))
@@ -213,6 +240,71 @@ final class ContainerWindow: NSPanel {
         }
     }
 
+    // MARK: - Mobile Mode
+
+    func setMobileMode(_ enabled: Bool) {
+        guard enabled != isMobileMode else { return }
+        isMobileMode = enabled
+        toolbarView.updateMobileMode(enabled)
+
+        webView.customUserAgent = enabled
+            ? WebViewConfig.mobileUserAgent
+            : WebViewConfig.desktopUserAgent
+
+        if let url = webView.url {
+            let switchedURL = Self.switchDomain(url: url, toMobile: enabled)
+            if switchedURL != url {
+                webView.load(URLRequest(url: switchedURL))
+            } else {
+                webView.reload()
+            }
+        }
+    }
+
+    func applySizePreset(width: CGFloat, height: CGFloat, enableMobile: Bool? = nil) {
+        let origin = frame.origin
+        setFrame(NSRect(x: origin.x, y: origin.y, width: width, height: height), display: true)
+        if let mobile = enableMobile {
+            setMobileMode(mobile)
+        }
+    }
+
+    @objc private func windowDidResize(_ notification: Notification) {
+        guard isAutoMobile else { return }
+        autoMobileDebounceTimer?.invalidate()
+        autoMobileDebounceTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.5, repeats: false
+        ) { [weak self] _ in
+            self?.evaluateAutoMobile()
+        }
+    }
+
+    private func evaluateAutoMobile() {
+        let w = frame.width
+        if isMobileMode && w > Self.autoMobileOffThreshold {
+            setMobileMode(false)
+        } else if !isMobileMode && w < Self.autoMobileOnThreshold {
+            setMobileMode(true)
+        }
+    }
+
+    private static func switchDomain(url: URL, toMobile: Bool) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let host = components.host else { return url }
+
+        if toMobile {
+            return url
+        }
+
+        for mapping in mobileDomainMap {
+            if host == mapping.mobile {
+                components.host = mapping.desktop
+                return components.url ?? url
+            }
+        }
+        return url
+    }
+
     // MARK: - Toolbar Auto-hide
 
     func setToolbarAutoHidden(_ hidden: Bool, animated: Bool = true) {
@@ -266,7 +358,9 @@ final class ContainerWindow: NSPanel {
             isAlwaysOnTop: level == .floating,
             isToolbarAutoHidden: isToolbarAutoHidden,
             fullscreenFillsContainer: fullscreenFillsContainer,
-            profileId: profile.id.uuidString
+            profileId: profile.id.uuidString,
+            isMobileMode: isMobileMode,
+            isAutoMobile: isAutoMobile
         )
     }
 }
@@ -285,6 +379,10 @@ extension ContainerWindow: ToolbarViewDelegate {
 
     func toolbarDidTogglePin(_ pinned: Bool) {
         setAlwaysOnTop(pinned)
+    }
+
+    func toolbarDidToggleMobileMode() {
+        setMobileMode(!isMobileMode)
     }
 
     func toolbarDidRequestSwitchProfile(relativeTo view: NSView) {

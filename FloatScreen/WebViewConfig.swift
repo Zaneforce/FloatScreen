@@ -5,7 +5,8 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
     private weak var webView: WKWebView?
     private weak var containerWindow: ContainerWindow?
 
-    static let safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
     static func makeConfiguration(profile: Profile = .personal) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
@@ -22,7 +23,8 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         self.containerWindow = container
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        webView.customUserAgent = Self.safariUserAgent
+        let isMobile = container.isMobileMode
+        webView.customUserAgent = isMobile ? Self.mobileUserAgent : Self.desktopUserAgent
         webView.allowsBackForwardNavigationGestures = true
 
         let script = WKUserScript(
@@ -181,7 +183,7 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         let popupRect = NSRect(x: 300, y: 300, width: w, height: h)
 
         let popupView = WKWebView(frame: .zero, configuration: configuration)
-        popupView.customUserAgent = Self.safariUserAgent
+        popupView.customUserAgent = Self.desktopUserAgent
         popupView.uiDelegate = self
 
         let popup = NSPanel(

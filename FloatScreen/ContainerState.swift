@@ -12,6 +12,8 @@ struct ContainerState: Codable {
     var isToolbarAutoHidden: Bool
     var fullscreenFillsContainer: Bool?
     var profileId: String?
+    var isMobileMode: Bool?
+    var isAutoMobile: Bool?
 }
 
 final class StatePersistence {

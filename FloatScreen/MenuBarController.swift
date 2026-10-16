@@ -137,6 +137,48 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
 
+        // Mobile mode
+        let mobileItem = NSMenuItem(
+            title: "Mobile Mode",
+            action: #selector(toggleMobileMode(_:)),
+            keyEquivalent: ""
+        )
+        mobileItem.target = self
+        if let active = activeContainer {
+            mobileItem.state = active.isMobileMode ? .on : .off
+        }
+        menu.addItem(mobileItem)
+
+        let autoMobileItem = NSMenuItem(
+            title: "Auto Mobile (by width)",
+            action: #selector(toggleAutoMobile(_:)),
+            keyEquivalent: ""
+        )
+        autoMobileItem.target = self
+        if let active = activeContainer {
+            autoMobileItem.state = active.isAutoMobile ? .on : .off
+        }
+        menu.addItem(autoMobileItem)
+
+        // Size presets
+        let sizeItem = NSMenuItem(title: "Size Preset", action: nil, keyEquivalent: "")
+        let sizeMenu = NSMenu()
+        let presets: [(String, CGFloat, CGFloat, Bool?)] = [
+            ("Phone (390\u{00d7}844)", 390, 844, true),
+            ("Tablet (820\u{00d7}1180)", 820, 1180, nil),
+            ("Desktop (1280\u{00d7}800)", 1280, 800, false),
+        ]
+        for (idx, preset) in presets.enumerated() {
+            let item = NSMenuItem(title: preset.0, action: #selector(applySizePreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = idx
+            sizeMenu.addItem(item)
+        }
+        sizeItem.submenu = sizeMenu
+        menu.addItem(sizeItem)
+
+        menu.addItem(.separator())
+
         let fsItem = NSMenuItem(
             title: "Fullscreen Fills Container",
             action: #selector(toggleFullscreenFills(_:)),
@@ -271,6 +313,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             domains.insert(host)
         }
         ContentBlocker.shared.disabledDomains = domains
+        rebuildMenu()
+    }
+
+    @objc private func toggleMobileMode(_ sender: NSMenuItem) {
+        guard let container = activeContainer else { return }
+        container.setMobileMode(!container.isMobileMode)
+        rebuildMenu()
+    }
+
+    @objc private func toggleAutoMobile(_ sender: NSMenuItem) {
+        guard let container = activeContainer else { return }
+        container.isAutoMobile.toggle()
+        rebuildMenu()
+    }
+
+    @objc private func applySizePreset(_ sender: NSMenuItem) {
+        guard let container = activeContainer else { return }
+        let presets: [(CGFloat, CGFloat, Bool?)] = [
+            (390, 844, true),
+            (820, 1180, nil),
+            (1280, 800, false),
+        ]
+        let (w, h, mobile) = presets[sender.tag]
+        container.applySizePreset(width: w, height: h, enableMobile: mobile)
         rebuildMenu()
     }
 
