@@ -24,6 +24,7 @@ targets:
         CODE_SIGN_STYLE: Manual
         PRODUCT_NAME: FloatScreen
         COMBINE_HIDPI_IMAGES: true
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - framework: WebKit.framework
         embed: false
