@@ -37,6 +37,7 @@ final class ContainerWindow: NSPanel {
     }
 
     var soundMode: SoundMode = .floatScreenSound
+    private(set) var isHiddenFromScreenSharing = false
     var savedFrameBeforeMinimize: NSRect?
     var savedBubbleOrigin: NSPoint?
     var savedBubbleEdge: String?
@@ -165,6 +166,13 @@ final class ContainerWindow: NSPanel {
             soundMode = .siteSounds
         }
 
+        // Screen sharing: restore from state, or use profile default
+        if let hidden = state?.hiddenFromScreenSharing {
+            setHiddenFromScreenSharing(hidden)
+        } else if self.profile.defaultHideFromScreenSharing == true {
+            setHiddenFromScreenSharing(true)
+        }
+
         startTitleObservation()
         toolbarView.updateMobileMode(isMobileMode)
 
@@ -276,6 +284,16 @@ final class ContainerWindow: NSPanel {
 
     func setClickThrough(_ enabled: Bool) {
         ignoresMouseEvents = enabled
+    }
+
+    func setHiddenFromScreenSharing(_ hidden: Bool) {
+        isHiddenFromScreenSharing = hidden
+        sharingType = hidden ? .none : .readOnly
+        toolbarView.updateScreenSharingHidden(hidden)
+        // Also apply to associated bubble
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.sharingType = hidden ? .none : .readOnly
+        }
     }
 
     func cleanupAndClose() {
@@ -551,7 +569,8 @@ final class ContainerWindow: NSPanel {
             bubbleX: bubble.map { Double($0.frame.origin.x) },
             bubbleY: bubble.map { Double($0.frame.origin.y) },
             bubbleEdge: savedBubbleEdge,
-            soundMode: soundMode.rawValue
+            soundMode: soundMode.rawValue,
+            hiddenFromScreenSharing: isHiddenFromScreenSharing
         )
     }
 }
@@ -581,6 +600,10 @@ extension ContainerWindow: ToolbarViewDelegate {
 
     func toolbarDidRequestFillVideo() {
         webView.evaluateJavaScript("window.__fsFillVideo && window.__fsFillVideo()", completionHandler: nil)
+    }
+
+    func toolbarDidToggleScreenSharingHidden() {
+        setHiddenFromScreenSharing(!isHiddenFromScreenSharing)
     }
 
     func toolbarDidRequestSwitchProfile(relativeTo view: NSView) {

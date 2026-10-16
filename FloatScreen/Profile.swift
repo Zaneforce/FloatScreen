@@ -6,6 +6,7 @@ struct Profile: Codable, Identifiable, Equatable {
     var name: String
     var colorHex: String
     var emoji: String
+    var defaultHideFromScreenSharing: Bool?
 
     var color: NSColor {
         NSColor(hex: colorHex) ?? .controlAccentColor

@@ -299,6 +299,35 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let hideShareItem = NSMenuItem(
+            title: "Hide from Screen Sharing",
+            action: #selector(toggleScreenSharing(_:)),
+            keyEquivalent: ""
+        )
+        hideShareItem.target = self
+        if let active = activeContainer {
+            hideShareItem.state = active.isHiddenFromScreenSharing ? .on : .off
+        }
+        menu.addItem(hideShareItem)
+
+        let hideAllShareItem = NSMenuItem(
+            title: "Hide All from Screen Sharing",
+            action: #selector(hideAllFromScreenSharing),
+            keyEquivalent: ""
+        )
+        hideAllShareItem.target = self
+        menu.addItem(hideAllShareItem)
+
+        let showAllShareItem = NSMenuItem(
+            title: "Show All in Screen Sharing",
+            action: #selector(showAllInScreenSharing),
+            keyEquivalent: ""
+        )
+        showAllShareItem.target = self
+        menu.addItem(showAllShareItem)
+
+        menu.addItem(.separator())
+
         let reopenItem = NSMenuItem(
             title: "Reopen Closed Container",
             action: #selector(reopenClosed),
@@ -607,6 +636,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func showAllContainers() {
         appDelegate?.showAllContainers()
+    }
+
+    @objc private func toggleScreenSharing(_ sender: NSMenuItem) {
+        guard let container = activeContainer else { return }
+        container.setHiddenFromScreenSharing(!container.isHiddenFromScreenSharing)
+        rebuildMenu()
+    }
+
+    @objc private func hideAllFromScreenSharing() {
+        appDelegate?.containers.forEach { $0.setHiddenFromScreenSharing(true) }
+        rebuildMenu()
+    }
+
+    @objc private func showAllInScreenSharing() {
+        appDelegate?.containers.forEach { $0.setHiddenFromScreenSharing(false) }
+        rebuildMenu()
     }
 
     @objc private func quitApp() {

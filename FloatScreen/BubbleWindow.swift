@@ -324,6 +324,15 @@ final class BubbleWindow: NSPanel {
         soundItem.submenu = soundMenu
         menu.addItem(soundItem)
 
+        let hideShareItem = NSMenuItem(
+            title: "Hide from Screen Sharing",
+            action: #selector(toggleScreenSharing(_:)),
+            keyEquivalent: ""
+        )
+        hideShareItem.target = self
+        hideShareItem.state = (container?.isHiddenFromScreenSharing ?? false) ? .on : .off
+        menu.addItem(hideShareItem)
+
         menu.addItem(.separator())
         if let profile = container?.profile {
             let p = NSMenuItem(title: "\(profile.emoji) \(profile.name)", action: nil, keyEquivalent: "")
@@ -343,6 +352,11 @@ final class BubbleWindow: NSPanel {
         guard let raw = sender.representedObject as? String,
               let mode = ContainerWindow.SoundMode(rawValue: raw) else { return }
         container?.soundMode = mode
+    }
+    @objc private func toggleScreenSharing(_ sender: NSMenuItem) {
+        guard let container else { return }
+        container.setHiddenFromScreenSharing(!container.isHiddenFromScreenSharing)
+        sharingType = container.isHiddenFromScreenSharing ? .none : .readOnly
     }
 }
 

@@ -4,6 +4,7 @@ struct Favorite: Codable, Identifiable {
     var id: UUID
     var name: String
     var urlString: String
+    var hideFromScreenSharing: Bool?
 }
 
 final class FavoritesManager {

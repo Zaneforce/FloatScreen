@@ -19,6 +19,7 @@ struct ContainerState: Codable {
     var bubbleY: Double?
     var bubbleEdge: String?
     var soundMode: String?
+    var hiddenFromScreenSharing: Bool?
 }
 
 final class StatePersistence {
