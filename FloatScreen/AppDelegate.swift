@@ -93,6 +93,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         container.orderOut(nil)
 
         let bubble = BubbleWindow(container: container)
+        if container.unreadCount > 0 {
+            bubble.setBadge(count: container.unreadCount)
+        } else if container.hasUnreadDot {
+            bubble.setBadgeDot()
+        }
         bubbles.append(bubble)
         restackBubbles()
         bubble.orderFront(nil)

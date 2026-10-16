@@ -1,11 +1,14 @@
 import AppKit
 
 final class BubbleWindow: NSPanel {
-    static let bubbleSize: CGFloat = 56
+    static let circleSize: CGFloat = 52
+    static let windowSize: CGFloat = 62
     static let spacing: CGFloat = 8
 
     weak var container: ContainerWindow?
     fileprivate var faviconImage: NSImage?
+    fileprivate var badgeCount: Int = 0
+    fileprivate var badgeDot: Bool = false
     private var dragStart: NSPoint?
     private var windowOriginAtDragStart: NSPoint?
     private var isDragging = false
@@ -13,7 +16,7 @@ final class BubbleWindow: NSPanel {
     init(container: ContainerWindow) {
         self.container = container
 
-        let rect = NSRect(x: 0, y: 0, width: Self.bubbleSize, height: Self.bubbleSize)
+        let rect = NSRect(x: 0, y: 0, width: Self.windowSize, height: Self.windowSize)
         super.init(
             contentRect: rect,
             styleMask: [.borderless],
@@ -37,6 +40,47 @@ final class BubbleWindow: NSPanel {
 
     override var canBecomeKey: Bool { true }
 
+    // MARK: - Badge
+
+    func setBadge(count: Int) {
+        let increased = count > badgeCount && count > 0
+        badgeCount = count
+        badgeDot = false
+        (contentView as? BubbleContentView)?.needsDisplay = true
+        if increased { popAnimation() }
+    }
+
+    func setBadgeDot() {
+        guard !badgeDot else { return }
+        badgeDot = true
+        badgeCount = 0
+        (contentView as? BubbleContentView)?.needsDisplay = true
+        popAnimation()
+    }
+
+    func clearBadge() {
+        guard badgeCount > 0 || badgeDot else { return }
+        badgeCount = 0
+        badgeDot = false
+        (contentView as? BubbleContentView)?.needsDisplay = true
+    }
+
+    private func popAnimation() {
+        let orig = frame
+        let expanded = orig.insetBy(dx: -3, dy: -3)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.1
+            self.animator().setFrame(expanded, display: true)
+        }, completionHandler: {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                self.animator().setFrame(orig, display: true)
+            }
+        })
+    }
+
+    // MARK: - Mouse Handling
+
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
@@ -48,16 +92,12 @@ final class BubbleWindow: NSPanel {
             let current = NSEvent.mouseLocation
             let dx = current.x - start.x
             let dy = current.y - start.y
-            if !isDragging && (abs(dx) > 3 || abs(dy) > 3) {
-                isDragging = true
-            }
+            if !isDragging && (abs(dx) > 3 || abs(dy) > 3) { isDragging = true }
             if isDragging {
                 setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
             }
         case .leftMouseUp:
-            if isDragging {
-                snapToEdge()
-            } else {
+            if isDragging { snapToEdge() } else {
                 (NSApp.delegate as? AppDelegate)?.restoreFromBubble(self)
             }
             dragStart = nil
@@ -71,16 +111,13 @@ final class BubbleWindow: NSPanel {
         super.sendEvent(event)
     }
 
+    // MARK: - Positioning
+
     func updatePosition(index: Int) {
         guard let screen = NSScreen.main else { return }
-        let visibleFrame = screen.visibleFrame
-        let x: CGFloat
-        if frame.midX > visibleFrame.midX {
-            x = visibleFrame.maxX - Self.bubbleSize - Self.spacing
-        } else {
-            x = visibleFrame.minX + Self.spacing
-        }
-        let y = visibleFrame.maxY - CGFloat(index + 1) * (Self.bubbleSize + Self.spacing)
+        let vis = screen.visibleFrame
+        let x = vis.maxX - Self.windowSize - Self.spacing
+        let y = vis.maxY - CGFloat(index + 1) * (Self.windowSize + Self.spacing)
         setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -115,19 +152,17 @@ final class BubbleWindow: NSPanel {
 
     private func snapToEdge() {
         guard let screen = NSScreen.main else { return }
-        let visibleFrame = screen.visibleFrame
-        let center = frame.midX
+        let vis = screen.visibleFrame
         let targetX: CGFloat
-        if center > visibleFrame.midX {
-            targetX = visibleFrame.maxX - Self.bubbleSize - Self.spacing
+        if frame.midX > vis.midX {
+            targetX = vis.maxX - Self.windowSize - Self.spacing
         } else {
-            targetX = visibleFrame.minX + Self.spacing
+            targetX = vis.minX + Self.spacing
         }
-        let clampedY = max(visibleFrame.minY + Self.spacing,
-                           min(frame.origin.y, visibleFrame.maxY - Self.bubbleSize - Self.spacing))
+        let clampedY = max(vis.minY + Self.spacing,
+                           min(frame.origin.y, vis.maxY - Self.windowSize - Self.spacing))
         let target = NSRect(x: targetX, y: clampedY,
-                            width: Self.bubbleSize, height: Self.bubbleSize)
-
+                            width: Self.windowSize, height: Self.windowSize)
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.25
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -139,93 +174,154 @@ final class BubbleWindow: NSPanel {
 
     private func showContextMenu(at event: NSEvent) {
         let menu = NSMenu()
-
         let restoreItem = NSMenuItem(title: "Restore", action: #selector(restoreAction), keyEquivalent: "")
         restoreItem.target = self
         menu.addItem(restoreItem)
-
         let closeItem = NSMenuItem(title: "Close", action: #selector(closeAction), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
-
         menu.addItem(.separator())
-
         if let profile = container?.profile {
-            let profileItem = NSMenuItem(title: "\(profile.emoji) \(profile.name)", action: nil, keyEquivalent: "")
-            profileItem.isEnabled = false
-            menu.addItem(profileItem)
+            let p = NSMenuItem(title: "\(profile.emoji) \(profile.name)", action: nil, keyEquivalent: "")
+            p.isEnabled = false
+            menu.addItem(p)
         }
-
         NSMenu.popUpContextMenu(menu, with: event, for: contentView!)
     }
 
     @objc private func restoreAction() {
         (NSApp.delegate as? AppDelegate)?.restoreFromBubble(self)
     }
-
     @objc private func closeAction() {
         (NSApp.delegate as? AppDelegate)?.closeBubble(self)
     }
 }
 
-// MARK: - Bubble Drawing View
+// MARK: - Bubble Drawing
 
 private class BubbleContentView: NSView {
     weak var owner: BubbleWindow?
 
     init(owner: BubbleWindow) {
         self.owner = owner
-        super.init(frame: NSRect(x: 0, y: 0, width: BubbleWindow.bubbleSize, height: BubbleWindow.bubbleSize))
+        super.init(frame: NSRect(x: 0, y: 0,
+                                 width: BubbleWindow.windowSize,
+                                 height: BubbleWindow.windowSize))
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let size = BubbleWindow.bubbleSize
-        let rect = NSRect(x: 0, y: 0, width: size, height: size)
-        let profileColor = owner?.container?.profile.color ?? .controlAccentColor
+        guard let owner else { return }
+        let ws = BubbleWindow.windowSize
+        let cs = BubbleWindow.circleSize
+        let offset = (ws - cs) / 2
 
-        // Ring
-        let ringPath = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+        let profileColor = owner.container?.profile.color ?? .controlAccentColor
+
+        // Outer ring
+        let ringRect = NSRect(x: offset, y: offset - 2, width: cs, height: cs)
+        let ringPath = NSBezierPath(ovalIn: ringRect.insetBy(dx: 0.5, dy: 0.5))
         profileColor.setStroke()
         ringPath.lineWidth = 2.5
         ringPath.stroke()
 
-        // Fill circle
-        let innerRect = rect.insetBy(dx: 3, dy: 3)
-        let fillPath = NSBezierPath(ovalIn: innerRect)
+        // Solid opaque inner circle (white or dark based on appearance)
+        let innerRect = ringRect.insetBy(dx: 3, dy: 3)
+        let innerPath = NSBezierPath(ovalIn: innerRect)
 
-        // Clip to circle
-        ctx.saveGState()
-        fillPath.addClip()
+        NSGraphicsContext.current?.cgContext.saveGState()
+        innerPath.addClip()
 
-        profileColor.withAlphaComponent(0.85).setFill()
-        fillPath.fill()
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        (isDark ? NSColor(white: 0.18, alpha: 1) : NSColor.white).setFill()
+        innerPath.fill()
 
-        if let favicon = owner?.faviconImage {
-            let iconSize: CGFloat = 28
+        if let favicon = owner.faviconImage {
+            let iconSize: CGFloat = cs * 0.52
             let iconRect = NSRect(
                 x: innerRect.midX - iconSize / 2,
                 y: innerRect.midY - iconSize / 2,
                 width: iconSize, height: iconSize
             )
-            favicon.draw(in: iconRect, from: NSRect.zero, operation: .sourceOver, fraction: 1.0)
+            favicon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
         } else {
-            let letter = String(owner?.container?.pageTitle.prefix(1) ?? "?")
+            let letter = String(owner.container?.pageTitle.prefix(1) ?? "?")
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 20, weight: .bold),
-                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: cs * 0.35, weight: .bold),
+                .foregroundColor: isDark ? NSColor.white : profileColor,
             ]
             let attrStr = NSAttributedString(string: letter, attributes: attrs)
             let strSize = attrStr.size()
-            let strPoint = NSPoint(
+            attrStr.draw(at: NSPoint(
                 x: innerRect.midX - strSize.width / 2,
                 y: innerRect.midY - strSize.height / 2
-            )
-            attrStr.draw(at: strPoint)
+            ))
         }
 
-        ctx.restoreGState()
+        NSGraphicsContext.current?.cgContext.restoreGState()
+
+        // Badge
+        if owner.badgeCount > 0 || owner.badgeDot {
+            drawBadge(at: NSPoint(x: ringRect.maxX - 6, y: ringRect.maxY - 6))
+        }
+    }
+
+    private func drawBadge(at center: NSPoint) {
+        guard let owner else { return }
+
+        if owner.badgeDot {
+            let dotSize: CGFloat = 12
+            let dotRect = NSRect(x: center.x - dotSize / 2, y: center.y - dotSize / 2,
+                                 width: dotSize, height: dotSize)
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: dotRect.insetBy(dx: -2, dy: -2)).fill()
+            NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1).setFill()
+            dotPath.fill()
+            return
+        }
+
+        let text: String
+        if owner.badgeCount > 99 {
+            text = "99+"
+        } else {
+            text = "\(owner.badgeCount)"
+        }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+            .foregroundColor: NSColor.white,
+        ]
+        let attrStr = NSAttributedString(string: text, attributes: attrs)
+        let textSize = attrStr.size()
+
+        let padH: CGFloat = 4
+        let padV: CGFloat = 2
+        let badgeW = max(textSize.width + padH * 2, textSize.height + padV * 2)
+        let badgeH = textSize.height + padV * 2
+
+        let badgeRect = NSRect(
+            x: center.x - badgeW / 2,
+            y: center.y - badgeH / 2,
+            width: badgeW, height: badgeH
+        )
+
+        let outlineRect = badgeRect.insetBy(dx: -2, dy: -2)
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let outlineColor: NSColor = isDark ? NSColor(white: 0.15, alpha: 1) : .white
+        outlineColor.setFill()
+        NSBezierPath(roundedRect: outlineRect, xRadius: outlineRect.height / 2,
+                     yRadius: outlineRect.height / 2).fill()
+
+        let red = NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1)
+        red.setFill()
+        NSBezierPath(roundedRect: badgeRect, xRadius: badgeH / 2,
+                     yRadius: badgeH / 2).fill()
+
+        attrStr.draw(at: NSPoint(
+            x: badgeRect.midX - textSize.width / 2,
+            y: badgeRect.midY - textSize.height / 2
+        ))
     }
 }

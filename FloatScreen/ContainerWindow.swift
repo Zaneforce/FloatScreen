@@ -162,11 +162,49 @@ final class ContainerWindow: NSPanel {
 
     var currentURL: URL? { webView.url }
     var pageTitle: String { webView.title ?? webView.url?.host ?? "New Tab" }
+    private(set) var unreadCount: Int = 0
+    private(set) var hasUnreadDot: Bool = false
 
     func webViewDidUpdate() {
         toolbarView.updateURL(webView.url?.absoluteString ?? "")
         toolbarView.updateNavigation(canGoBack: webView.canGoBack, canGoForward: webView.canGoForward)
         title = pageTitle
+        detectUnreadFromTitle()
+    }
+
+    func updateUnreadCount(_ count: Int) {
+        unreadCount = count
+        hasUnreadDot = false
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.setBadge(count: count)
+        }
+    }
+
+    func updateUnreadDot() {
+        hasUnreadDot = true
+        unreadCount = 0
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.setBadgeDot()
+        }
+    }
+
+    func clearUnreadBadge() {
+        unreadCount = 0
+        hasUnreadDot = false
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.clearBadge()
+        }
+    }
+
+    private func detectUnreadFromTitle() {
+        let t = webView.title ?? ""
+        if let count = UnreadDetector.parseCountFromTitle(t) {
+            updateUnreadCount(count)
+        } else if UnreadDetector.hasUnreadIndicator(t) {
+            updateUnreadDot()
+        } else if unreadCount > 0 || hasUnreadDot {
+            clearUnreadBadge()
+        }
     }
 
     func setAlwaysOnTop(_ enabled: Bool) {

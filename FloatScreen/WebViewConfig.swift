@@ -34,7 +34,9 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         )
         let ucc = webView.configuration.userContentController
         ucc.addUserScript(script)
-        ucc.add(WeakMessageHandler(delegate: self), name: "fullscreen")
+        let weakHandler = WeakMessageHandler(delegate: self)
+        ucc.add(weakHandler, name: "fullscreen")
+        ucc.add(weakHandler, name: "unread")
 
         ContentBlocker.shared.apply(to: ucc)
 
@@ -44,6 +46,13 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
             forMainFrameOnly: true
         )
         ucc.addUserScript(ytScript)
+
+        let slackScript = WKUserScript(
+            source: UnreadDetector.slackScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        ucc.addUserScript(slackScript)
     }
 
     static func navigate(_ webView: WKWebView, to input: String) {
@@ -69,14 +78,21 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
 
     func userContentController(_ userContentController: WKUserContentController,
                                 didReceive message: WKScriptMessage) {
-        guard message.name == "fullscreen",
-              let body = message.body as? [String: String],
-              let action = body["action"] else { return }
-
-        if action == "enter" {
-            containerWindow?.enterContainerFullscreen()
-        } else if action == "exit" {
-            containerWindow?.exitContainerFullscreen()
+        switch message.name {
+        case "fullscreen":
+            guard let body = message.body as? [String: String],
+                  let action = body["action"] else { return }
+            if action == "enter" {
+                containerWindow?.enterContainerFullscreen()
+            } else if action == "exit" {
+                containerWindow?.exitContainerFullscreen()
+            }
+        case "unread":
+            guard let body = message.body as? [String: Any],
+                  let count = body["count"] as? Int else { return }
+            containerWindow?.updateUnreadCount(count)
+        default:
+            break
         }
     }
 
