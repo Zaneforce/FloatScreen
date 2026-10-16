@@ -1,11 +1,12 @@
 import AppKit
 
 final class BubbleWindow: NSPanel {
-    static let circleSize: CGFloat = 52
-    static let badgeOverhang: CGFloat = 12
-    static let windowSize: CGFloat = 76
-    static let visualCenter: CGFloat = (windowSize - badgeOverhang) / 2
-    static let spacing: CGFloat = 8
+    static let circleSize: CGFloat = 56
+    static let ringWidth: CGFloat = 3
+    static let badgeOverhang: CGFloat = 14
+    static let windowSize: CGFloat = circleSize + badgeOverhang
+    static let circleGap: CGFloat = 12
+    static let topInset: CGFloat = 140
 
     weak var container: ContainerWindow?
     fileprivate var faviconImage: NSImage?
@@ -53,9 +54,6 @@ final class BubbleWindow: NSPanel {
         if increased {
             popAnimation()
             pulseAnimation()
-            // Sound is handled by NotificationForwarder for web notifications.
-            // For title-based badge increases (no web notification), play here
-            // only if floatScreenSound mode AND no native notification was just posted.
             if container?.soundMode == .floatScreenSound {
                 NotificationSound.shared.playUnlessRecentlyPosted()
             }
@@ -127,7 +125,7 @@ final class BubbleWindow: NSPanel {
         case .leftMouseUp:
             if isDragging {
                 snapToEdge()
-                saveBubblePosition()
+                savePosition()
             } else {
                 (NSApp.delegate as? AppDelegate)?.restoreFromBubble(self)
             }
@@ -154,11 +152,12 @@ final class BubbleWindow: NSPanel {
             origin.y = max(vis.minY, min(origin.y, vis.maxY - Self.windowSize))
             setFrameOrigin(origin)
         } else {
-            let x = vis.maxX - Self.windowSize - Self.spacing
-            let y = vis.maxY - Self.windowSize - Self.spacing
+            let x = vis.maxX - Self.windowSize - 8
+            let y = vis.maxY - Self.topInset - Self.windowSize
             setFrameOrigin(NSPoint(x: x, y: y))
         }
         avoidCollisions()
+        savePosition()
     }
 
     func avoidCollisions() {
@@ -168,8 +167,8 @@ final class BubbleWindow: NSPanel {
 
         for other in others {
             var attempts = 0
-            while myFrame.intersects(other.frame) && attempts < 10 {
-                myFrame.origin.y -= (Self.circleSize + Self.spacing)
+            while myFrame.intersects(other.frame) && attempts < 15 {
+                myFrame.origin.y -= (Self.circleSize + Self.circleGap)
                 attempts += 1
             }
         }
@@ -182,7 +181,7 @@ final class BubbleWindow: NSPanel {
         setFrameOrigin(myFrame.origin)
     }
 
-    private func saveBubblePosition() {
+    func savePosition() {
         container?.savedBubbleOrigin = frame.origin
         guard let screen = NSScreen.main else { return }
         let vis = screen.visibleFrame
@@ -209,8 +208,6 @@ final class BubbleWindow: NSPanel {
         guard !faviconLocked else { return }
         faviconHost = currentHost
 
-        // Prefer apple-touch-icon or manifest icon (badge-free) for known sites,
-        // fall back to standard favicon
         let js = """
         (function(){
             var touch = document.querySelector('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
@@ -240,7 +237,6 @@ final class BubbleWindow: NSPanel {
                     (self.contentView as? BubbleContentView)?.needsDisplay = true
                 }
             } else if let host = fallbackHost {
-                // apple-touch-icon failed, try /favicon.ico
                 let fallback = URL(string: "https://\(host)/favicon.ico")
                 guard let fallback, fallback != url else { return }
                 URLSession.shared.dataTask(with: fallback) { data, _, _ in
@@ -263,12 +259,12 @@ final class BubbleWindow: NSPanel {
         let vis = screen.visibleFrame
         let targetX: CGFloat
         if frame.midX > vis.midX {
-            targetX = vis.maxX - Self.windowSize - Self.spacing
+            targetX = vis.maxX - Self.windowSize - 8
         } else {
-            targetX = vis.minX + Self.spacing
+            targetX = vis.minX + 8
         }
-        let clampedY = max(vis.minY + Self.spacing,
-                           min(frame.origin.y, vis.maxY - Self.windowSize - Self.spacing))
+        let clampedY = max(vis.minY + 8,
+                           min(frame.origin.y, vis.maxY - Self.windowSize - 8))
         let target = NSRect(x: targetX, y: clampedY,
                             width: Self.windowSize, height: Self.windowSize)
         NSAnimationContext.runAnimationGroup { ctx in
@@ -341,39 +337,63 @@ private class BubbleContentView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let owner else { return }
         let cs = BubbleWindow.circleSize
-
+        let rw = BubbleWindow.ringWidth
+        let ws = BubbleWindow.windowSize
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let profileColor = owner.container?.profile.color ?? .controlAccentColor
 
-        // Circle is positioned at bottom-left with room for badge overflow at top-right
-        let circleOrigin = NSPoint(x: 0, y: 0)
-        let ringRect = NSRect(x: circleOrigin.x, y: circleOrigin.y, width: cs, height: cs)
-        let ringPath = NSBezierPath(ovalIn: ringRect.insetBy(dx: 0.5, dy: 0.5))
-        profileColor.setStroke()
-        ringPath.lineWidth = 2.5
-        ringPath.stroke()
+        // Center the circle within the window, offset slightly for badge room
+        let circleRect = NSRect(
+            x: floor((ws - cs) / 2),
+            y: floor((ws - cs) / 2) - 2,
+            width: cs, height: cs
+        )
 
-        let innerRect = ringRect.insetBy(dx: 3, dy: 3)
+        // Shadow
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 4
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+
+        // Ring
+        let ringPath = NSBezierPath(ovalIn: circleRect)
+        profileColor.setFill()
+        ringPath.fill()
+
+        NSShadow().set()
+
+        // Inner circle
+        let innerRect = circleRect.insetBy(dx: rw, dy: rw)
         let innerPath = NSBezierPath(ovalIn: innerRect)
+        let bgColor: NSColor = isDark
+            ? NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
+            : .white
+        bgColor.setFill()
+        innerPath.fill()
 
+        // Favicon clipped to inner circle
         NSGraphicsContext.current?.cgContext.saveGState()
         innerPath.addClip()
 
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        (isDark ? NSColor(white: 0.18, alpha: 1) : NSColor.white).setFill()
-        innerPath.fill()
-
+        let iconDiameter = innerRect.width * 0.55
         if let favicon = owner.faviconImage {
-            let iconSize: CGFloat = cs * 0.52
+            let aspect = favicon.size.width / max(favicon.size.height, 1)
+            var drawW = iconDiameter
+            var drawH = iconDiameter
+            if aspect > 1 { drawH = drawW / aspect }
+            else { drawW = drawH * aspect }
             let iconRect = NSRect(
-                x: innerRect.midX - iconSize / 2,
-                y: innerRect.midY - iconSize / 2,
-                width: iconSize, height: iconSize
+                x: innerRect.midX - drawW / 2,
+                y: innerRect.midY - drawH / 2,
+                width: drawW, height: drawH
             )
+            NSGraphicsContext.current?.imageInterpolation = .high
             favicon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
         } else {
             let letter = String(owner.container?.pageTitle.prefix(1) ?? "?")
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: cs * 0.35, weight: .bold),
+                .font: NSFont.systemFont(ofSize: iconDiameter * 0.7, weight: .bold),
                 .foregroundColor: isDark ? NSColor.white : profileColor,
             ]
             let attrStr = NSAttributedString(string: letter, attributes: attrs)
@@ -386,11 +406,11 @@ private class BubbleContentView: NSView {
 
         NSGraphicsContext.current?.cgContext.restoreGState()
 
-        // Badge centered on circle's top-right edge
+        // Badge
         if owner.badgeCount > 0 || owner.badgeDot {
             let badgeCenter = NSPoint(
-                x: ringRect.maxX - 4,
-                y: ringRect.maxY - 4
+                x: circleRect.maxX - cs * 0.08,
+                y: circleRect.maxY - cs * 0.08
             )
             drawBadge(at: badgeCenter, isDark: isDark)
         }
@@ -399,19 +419,18 @@ private class BubbleContentView: NSView {
     private func drawBadge(at center: NSPoint, isDark: Bool) {
         guard let owner else { return }
         let red = NSColor(red: 1, green: 0.231, blue: 0.188, alpha: 1)
-        let outlineBg: NSColor = isDark ? NSColor(white: 0.1, alpha: 1) : .white
+        let outlineBg: NSColor = isDark
+            ? NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1) : .white
 
         if owner.badgeDot {
             let dotSize: CGFloat = 12
             let dotRect = NSRect(x: center.x - dotSize / 2, y: center.y - dotSize / 2,
                                  width: dotSize, height: dotSize)
-            // Shadow
             let shadow = NSShadow()
             shadow.shadowColor = .black.withAlphaComponent(0.3)
             shadow.shadowBlurRadius = 3
             shadow.shadowOffset = NSSize(width: 0, height: -1)
             shadow.set()
-
             outlineBg.setFill()
             NSBezierPath(ovalIn: dotRect.insetBy(dx: -2, dy: -2)).fill()
             NSShadow().set()
@@ -421,49 +440,32 @@ private class BubbleContentView: NSView {
         }
 
         let text = owner.badgeCount > 99 ? "99+" : "\(owner.badgeCount)"
-
         let font = NSFont.systemFont(ofSize: 13, weight: .bold)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.white,
-        ]
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
         let attrStr = NSAttributedString(string: text, attributes: attrs)
         let textSize = attrStr.size()
 
-        let padH: CGFloat = 5
         let badgeH: CGFloat = 22
-        let badgeW = max(badgeH, textSize.width + padH * 2)
+        let badgeW = max(badgeH, textSize.width + 10)
+        let badgeRect = NSRect(x: center.x - badgeW / 2, y: center.y - badgeH / 2,
+                               width: badgeW, height: badgeH)
 
-        let badgeRect = NSRect(
-            x: center.x - badgeW / 2,
-            y: center.y - badgeH / 2,
-            width: badgeW, height: badgeH
-        )
-
-        // Shadow
         let shadow = NSShadow()
         shadow.shadowColor = .black.withAlphaComponent(0.3)
         shadow.shadowBlurRadius = 3
         shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.set()
 
-        // Outline
         let outlineRect = badgeRect.insetBy(dx: -2, dy: -2)
         outlineBg.setFill()
         NSBezierPath(roundedRect: outlineRect, xRadius: outlineRect.height / 2,
                      yRadius: outlineRect.height / 2).fill()
-
-        // Clear shadow for the red fill
         NSShadow().set()
 
         red.setFill()
-        NSBezierPath(roundedRect: badgeRect, xRadius: badgeH / 2,
-                     yRadius: badgeH / 2).fill()
-
-        attrStr.draw(at: NSPoint(
-            x: badgeRect.midX - textSize.width / 2,
-            y: badgeRect.midY - textSize.height / 2
-        ))
+        NSBezierPath(roundedRect: badgeRect, xRadius: badgeH / 2, yRadius: badgeH / 2).fill()
+        attrStr.draw(at: NSPoint(x: badgeRect.midX - textSize.width / 2,
+                                 y: badgeRect.midY - textSize.height / 2))
     }
 }
 
