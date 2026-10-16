@@ -370,12 +370,17 @@ extension WebViewConfig {
             'will-change:auto!important;overflow:visible!important;clip:auto!important;' +
             'clip-path:none!important;perspective:none!important;position:static!important;' +
             'z-index:auto!important;}' +
-            '.__fs_exit_btn{position:fixed!important;top:8px!important;right:8px!important;' +
-            'z-index:2147483647!important;background:rgba(0,0,0,0.7)!important;color:#fff!important;' +
-            'border:none!important;border-radius:4px!important;padding:4px 12px!important;' +
-            'font:13px -apple-system,sans-serif!important;cursor:pointer!important;}';
+            '.__fs_exit_btn{position:fixed!important;top:8px!important;left:8px!important;' +
+            'z-index:2147483647!important;background:rgba(0,0,0,0.6)!important;color:#fff!important;' +
+            'border:none!important;border-radius:12px!important;padding:4px 14px!important;' +
+            'font:12px -apple-system,sans-serif!important;cursor:pointer!important;' +
+            'opacity:0!important;transition:opacity 0.3s!important;pointer-events:none!important;}' +
+            '.__fs_exit_btn.__fs_exit_visible{opacity:1!important;pointer-events:auto!important;}' +
+            // Cursor fix for mobile mode: override cursor:none on video players
+            '.html5-video-player,.html5-video-player *,video{cursor:default!important;}';
         (document.head || document.documentElement).appendChild(s);
         var _styleObserver = null;
+        var _exitBtnTimer = null;
 
         var _reqFS = Element.prototype.requestFullscreen;
         var _reqWK = Element.prototype.webkitRequestFullscreen;
@@ -569,21 +574,26 @@ extension WebViewConfig {
             } catch(e) {}
         }
 
-        // Synthesize touch events from mouse clicks so YouTube mobile controls respond
+        // Synthesize touch events from mouse clicks (Touch constructor unavailable on macOS)
+        function makeFakeTouch(e) {
+            return {identifier:1, target:e.target, clientX:e.clientX, clientY:e.clientY,
+                pageX:e.pageX, pageY:e.pageY, screenX:e.screenX, screenY:e.screenY};
+        }
+        function dispatchFakeTouch(type, e, touches) {
+            var ev = new Event(type, {bubbles:true, cancelable:true});
+            Object.defineProperty(ev, 'touches', {value: touches});
+            Object.defineProperty(ev, 'targetTouches', {value: touches});
+            Object.defineProperty(ev, 'changedTouches', {value: [makeFakeTouch(e)]});
+            e.target.dispatchEvent(ev);
+        }
         document.addEventListener('mousedown', function(e) {
             if (navigator.maxTouchPoints > 0) {
-                var t = new Touch({identifier:1, target:e.target, clientX:e.clientX, clientY:e.clientY,
-                    pageX:e.pageX, pageY:e.pageY, screenX:e.screenX, screenY:e.screenY});
-                e.target.dispatchEvent(new TouchEvent('touchstart', {touches:[t], targetTouches:[t],
-                    changedTouches:[t], bubbles:true, cancelable:true}));
+                dispatchFakeTouch('touchstart', e, [makeFakeTouch(e)]);
             }
         }, true);
         document.addEventListener('mouseup', function(e) {
             if (navigator.maxTouchPoints > 0) {
-                var t = new Touch({identifier:1, target:e.target, clientX:e.clientX, clientY:e.clientY,
-                    pageX:e.pageX, pageY:e.pageY, screenX:e.screenX, screenY:e.screenY});
-                e.target.dispatchEvent(new TouchEvent('touchend', {touches:[], targetTouches:[],
-                    changedTouches:[t], bubbles:true, cancelable:true}));
+                dispatchFakeTouch('touchend', e, []);
             }
         }, true);
 
@@ -615,6 +625,32 @@ extension WebViewConfig {
             }
         }, true);
 
+        // Show/hide exit button on mouse movement
+        function showExitBtn() {
+            var btn = document.getElementById('__fs_exit_btn');
+            if (!btn) return;
+            btn.classList.add('__fs_exit_visible');
+            clearTimeout(_exitBtnTimer);
+            _exitBtnTimer = setTimeout(function() {
+                if (btn && !btn.matches(':hover')) {
+                    btn.classList.remove('__fs_exit_visible');
+                }
+            }, 2000);
+        }
+        document.addEventListener('mousemove', function() {
+            if (_el) showExitBtn();
+            // Cursor fix: force default on elements with cursor:none
+            var hover = document.elementFromPoint(
+                window.__lastMX || 0, window.__lastMY || 0);
+            if (hover && getComputedStyle(hover).cursor === 'none') {
+                hover.style.setProperty('cursor', 'default', 'important');
+            }
+        });
+        document.addEventListener('mousemove', function(e) {
+            window.__lastMX = e.clientX;
+            window.__lastMY = e.clientY;
+        }, true);
+
         // "Fill Video" — callable from native via evaluateJavaScript
         window.__fsFillVideo = function() {
             var videos = document.querySelectorAll('video');
@@ -638,7 +674,17 @@ extension WebViewConfig {
                 btn.className = '__fs_exit_btn';
                 btn.textContent = 'Exit';
                 btn.onclick = function() { exit(); };
+                btn.onmouseenter = function() {
+                    clearTimeout(_exitBtnTimer);
+                    btn.classList.add('__fs_exit_visible');
+                };
+                btn.onmouseleave = function() {
+                    _exitBtnTimer = setTimeout(function() {
+                        btn.classList.remove('__fs_exit_visible');
+                    }, 2000);
+                };
                 document.body.appendChild(btn);
+                showExitBtn();
             }
         };
     })();
