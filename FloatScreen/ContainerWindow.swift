@@ -22,8 +22,25 @@ final class ContainerWindow: NSPanel {
     private static let autoMobileOffThreshold: CGFloat = 600
     private var autoMobileDebounceTimer: Timer?
 
+    enum SoundMode: String, CaseIterable {
+        case siteSounds = "site"
+        case floatScreenSound = "floatscreen"
+        case silent = "silent"
+
+        var label: String {
+            switch self {
+            case .siteSounds: return "Site Sounds"
+            case .floatScreenSound: return "FloatScreen Sound"
+            case .silent: return "Silent"
+            }
+        }
+    }
+
+    var soundMode: SoundMode = .floatScreenSound
     var savedFrameBeforeMinimize: NSRect?
     private var zoomHideTimer: Timer?
+
+    private static let slackHosts = ["app.slack.com", "slack.com"]
 
     private var webViewTopConstraint: NSLayoutConstraint!
     private var containerView: NSView!
@@ -132,6 +149,15 @@ final class ContainerWindow: NSPanel {
             isMobileMode = s.isMobileMode ?? false
             isAutoMobile = s.isAutoMobile ?? false
             WebViewConfig.applyUserAgent(to: webView, mobile: isMobileMode)
+            if let sm = s.soundMode, let mode = SoundMode(rawValue: sm) {
+                soundMode = mode
+            }
+        }
+
+        // Default Slack to site sounds so we don't double-play
+        if state == nil, let host = url?.host,
+           Self.slackHosts.contains(where: { host.hasSuffix($0) }) {
+            soundMode = .siteSounds
         }
 
         toolbarView.updateMobileMode(isMobileMode)
@@ -449,7 +475,8 @@ final class ContainerWindow: NSPanel {
             isAutoMobile: isAutoMobile,
             isMinimized: bubble != nil,
             bubbleX: bubble.map { Double($0.frame.origin.x) },
-            bubbleY: bubble.map { Double($0.frame.origin.y) }
+            bubbleY: bubble.map { Double($0.frame.origin.y) },
+            soundMode: soundMode.rawValue
         )
     }
 }

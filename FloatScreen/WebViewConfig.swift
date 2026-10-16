@@ -117,6 +117,14 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
         let weakHandler = WeakMessageHandler(delegate: self)
         ucc.add(weakHandler, name: "fullscreen")
         ucc.add(weakHandler, name: "unread")
+        ucc.add(weakHandler, name: "notification")
+
+        let notifScript = WKUserScript(
+            source: Self.notificationPolyfill,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        ucc.addUserScript(notifScript)
 
         ContentBlocker.shared.apply(to: ucc)
 
@@ -184,6 +192,17 @@ final class WebViewConfig: NSObject, WKNavigationDelegate, WKUIDelegate,
             guard let body = message.body as? [String: Any],
                   let count = body["count"] as? Int else { return }
             containerWindow?.updateUnreadCount(count)
+        case "notification":
+            guard let body = message.body as? [String: Any],
+                  let title = body["title"] as? String else { return }
+            let notifBody = body["body"] as? String
+            let notifId = body["id"] as? String ?? UUID().uuidString
+            NotificationForwarder.shared.post(
+                id: notifId,
+                title: title,
+                body: notifBody,
+                container: containerWindow
+            )
         default:
             break
         }
@@ -436,5 +455,121 @@ private class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ ucc: WKUserContentController,
                                 didReceive message: WKScriptMessage) {
         delegate?.userContentController(ucc, didReceive: message)
+    }
+}
+
+// MARK: - Notification Polyfill Script
+
+extension WebViewConfig {
+    static let notificationPolyfill = """
+    (function() {
+        'use strict';
+        if (window.__fsNotifInit) return;
+        window.__fsNotifInit = true;
+
+        var _id = 0;
+        var _callbacks = {};
+
+        function FSNotification(title, options) {
+            options = options || {};
+            this.title = title;
+            this.body = options.body || '';
+            this.icon = options.icon || '';
+            this.tag = options.tag || '';
+            this._id = String(++_id);
+            this.onclick = null;
+
+            _callbacks[this._id] = this;
+
+            try {
+                window.webkit.messageHandlers.notification.postMessage({
+                    id: this._id,
+                    title: title,
+                    body: this.body,
+                    icon: this.icon,
+                    tag: this.tag
+                });
+            } catch(e) {}
+        }
+
+        FSNotification.permission = 'granted';
+        FSNotification.requestPermission = function(cb) {
+            if (cb) cb('granted');
+            return Promise.resolve('granted');
+        };
+        FSNotification.prototype.close = function() {};
+        FSNotification.prototype.addEventListener = function() {};
+
+        window.Notification = FSNotification;
+    })();
+    """
+}
+
+// MARK: - Native Notification Forwarder
+
+import UserNotifications
+
+final class NotificationForwarder: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationForwarder()
+
+    private override init() {
+        super.init()
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    func post(id: String, title: String, body: String?, container: ContainerWindow?) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        if let body { content.body = body }
+        if let name = container?.profile.name {
+            content.subtitle = name
+        }
+
+        let soundMode = container?.soundMode ?? .floatScreenSound
+        switch soundMode {
+        case .floatScreenSound:
+            content.sound = .default
+        case .siteSounds:
+            content.sound = nil
+        case .silent:
+            content.sound = nil
+        }
+
+        if let cid = container?.containerID.uuidString {
+            content.userInfo["containerId"] = cid
+        }
+        content.userInfo["notifId"] = id
+
+        let request = UNNotificationRequest(
+            identifier: "fs-\(id)-\(UUID().uuidString.prefix(4))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                 didReceive response: UNNotificationResponse,
+                                 withCompletionHandler handler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        if let cidStr = userInfo["containerId"] as? String,
+           let cid = UUID(uuidString: cidStr),
+           let appDelegate = NSApp.delegate as? AppDelegate {
+            if let bubble = appDelegate.bubbles.first(where: { $0.container?.containerID == cid }) {
+                appDelegate.restoreFromBubble(bubble)
+            } else if let container = appDelegate.containers.first(where: { $0.containerID == cid }) {
+                NSApp.activate(ignoringOtherApps: true)
+                container.makeKeyAndOrderFront(nil)
+            }
+        }
+        handler()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                 willPresent notification: UNNotification,
+                                 withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        handler([.banner, .sound])
     }
 }

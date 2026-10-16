@@ -157,6 +157,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         opacityItem.submenu = opacityMenu
         menu.addItem(opacityItem)
 
+        // Sound mode for active container
+        let soundItem = NSMenuItem(title: "Notification Sound", action: nil, keyEquivalent: "")
+        let soundMenu = NSMenu()
+        for mode in ContainerWindow.SoundMode.allCases {
+            let item = NSMenuItem(title: mode.label, action: #selector(setSoundMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = activeContainer?.soundMode == mode ? .on : .off
+            soundMenu.addItem(item)
+        }
+        soundMenu.addItem(.separator())
+        let soundSelItem = NSMenuItem(title: "Sound: \(NotificationSound.shared.selectedSoundName)", action: nil, keyEquivalent: "")
+        let soundSelMenu = NSMenu()
+        for name in NotificationSound.availableSounds {
+            let item = NSMenuItem(title: name, action: #selector(selectSound(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = name
+            item.state = name == NotificationSound.shared.selectedSoundName ? .on : .off
+            soundSelMenu.addItem(item)
+        }
+        soundSelItem.submenu = soundSelMenu
+        soundMenu.addItem(soundSelItem)
+        soundItem.submenu = soundMenu
+        menu.addItem(soundItem)
+
         // Zoom submenu
         let zoomItem = NSMenuItem(title: "Zoom", action: nil, keyEquivalent: "")
         let zoomMenu = NSMenu()
@@ -431,6 +456,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             domains.insert(host)
         }
         ContentBlocker.shared.disabledDomains = domains
+        rebuildMenu()
+    }
+
+    @objc private func setSoundMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = ContainerWindow.SoundMode(rawValue: raw) else { return }
+        activeContainer?.soundMode = mode
+        rebuildMenu()
+    }
+
+    @objc private func selectSound(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        NotificationSound.shared.selectedSoundName = name
+        NotificationSound.shared.playIfNeeded()
         rebuildMenu()
     }
 

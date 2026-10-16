@@ -52,7 +52,9 @@ final class BubbleWindow: NSPanel {
         if increased {
             popAnimation()
             pulseAnimation()
-            NotificationSound.shared.playIfNeeded()
+            if container?.soundMode == .floatScreenSound {
+                NotificationSound.shared.playIfNeeded()
+            }
         }
     }
 
@@ -203,6 +205,20 @@ final class BubbleWindow: NSPanel {
         closeItem.target = self
         menu.addItem(closeItem)
         menu.addItem(.separator())
+
+        let soundItem = NSMenuItem(title: "Sound", action: nil, keyEquivalent: "")
+        let soundMenu = NSMenu()
+        for mode in ContainerWindow.SoundMode.allCases {
+            let item = NSMenuItem(title: mode.label, action: #selector(setSoundMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = container?.soundMode == mode ? .on : .off
+            soundMenu.addItem(item)
+        }
+        soundItem.submenu = soundMenu
+        menu.addItem(soundItem)
+
+        menu.addItem(.separator())
         if let profile = container?.profile {
             let p = NSMenuItem(title: "\(profile.emoji) \(profile.name)", action: nil, keyEquivalent: "")
             p.isEnabled = false
@@ -216,6 +232,11 @@ final class BubbleWindow: NSPanel {
     }
     @objc private func closeAction() {
         (NSApp.delegate as? AppDelegate)?.closeBubble(self)
+    }
+    @objc private func setSoundMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = ContainerWindow.SoundMode(rawValue: raw) else { return }
+        container?.soundMode = mode
     }
 }
 
@@ -369,10 +390,20 @@ final class NotificationSound {
     private var lastPlayTime: Date = .distantPast
     private let cooldown: TimeInterval = 3.0
 
+    static let availableSounds = ["Glass", "Ping", "Pop", "Purr", "Sosumi", "Tink"]
+    private static let selectedSoundKey = "notificationSound"
+
+    var selectedSoundName: String {
+        get { UserDefaults.standard.string(forKey: Self.selectedSoundKey) ?? "Glass" }
+        set { UserDefaults.standard.set(newValue, forKey: Self.selectedSoundKey) }
+    }
+
     func playIfNeeded() {
         let now = Date()
         guard now.timeIntervalSince(lastPlayTime) > cooldown else { return }
         lastPlayTime = now
-        NSSound.beep()
+        if let sound = NSSound(named: NSSound.Name(selectedSoundName)) {
+            sound.play()
+        }
     }
 }
