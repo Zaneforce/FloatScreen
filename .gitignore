@@ -5,6 +5,10 @@ build/
 DerivedData/
 *.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 
+# Build artifacts
+*.dmg
+*.zip
+dist/
+
 # macOS
 .DS_Store
-FloatScreen.dmg

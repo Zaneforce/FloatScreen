@@ -240,10 +240,17 @@ final class ContainerWindow: NSPanel {
         hasUnreadDot = false
 
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
-            bubble.setBadge(count: count, playSound: isGenuineIncrease)
+            if count == 0 {
+                bubble.clearBadge()
+            } else {
+                bubble.setBadge(count: count, playSound: isGenuineIncrease)
+            }
         }
 
+        // Track both increases and decreases
         if isGenuineIncrease {
+            lastNotifiedCount = count
+        } else if count < lastNotifiedCount && !isSuppressed {
             lastNotifiedCount = count
         }
     }
@@ -256,8 +263,8 @@ final class ContainerWindow: NSPanel {
     }
 
     func clearUnreadBadge() {
+        unreadCount = 0
         hasUnreadDot = false
-        // Don't reset lastNotifiedCount — prevents false increase on re-minimize
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
             bubble.clearBadge()
         }
