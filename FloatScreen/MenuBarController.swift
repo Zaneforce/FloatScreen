@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import Darwin
 
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
@@ -743,10 +744,28 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         guard let containers = appDelegate?.containers else { return }
 
-        let totalMB = Self.processMemoryMB()
-        let totalItem = NSMenuItem(title: "FloatScreen total: \(totalMB) MB", action: nil, keyEquivalent: "")
-        totalItem.isEnabled = false
-        menu.addItem(totalItem)
+        let appMB = Self.processMemoryMB(pid: ProcessInfo.processInfo.processIdentifier)
+
+        // Try reading WebContent process memory
+        let webContentPIDs = Self.findWebContentPIDs()
+        let webContentTotal = webContentPIDs.reduce(0) { $0 + Self.processMemoryMB(pid: $1) }
+        let canReadWebContent = !webContentPIDs.isEmpty && webContentTotal > 0
+
+        if canReadWebContent {
+            let total = appMB + webContentTotal
+            let totalItem = NSMenuItem(title: "Total: \(total) MB (app \(appMB) + web \(webContentTotal))", action: nil, keyEquivalent: "")
+            totalItem.isEnabled = false
+            menu.addItem(totalItem)
+        } else {
+            let totalItem = NSMenuItem(title: "FloatScreen app: \(appMB) MB (web pages not included)", action: nil, keyEquivalent: "")
+            totalItem.isEnabled = false
+            menu.addItem(totalItem)
+
+            let activityItem = NSMenuItem(title: "Open Activity Monitor\u{2026}", action: #selector(openActivityMonitor), keyEquivalent: "")
+            activityItem.target = self
+            menu.addItem(activityItem)
+        }
+
         menu.addItem(.separator())
 
         for container in containers {
@@ -772,16 +791,49 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    static func processMemoryMB() -> Int {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+    static func processMemoryMB(pid: pid_t) -> Int {
+        var usage = rusage_info_v4()
+        let result = withUnsafeMutablePointer(to: &usage) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
             }
         }
-        guard result == KERN_SUCCESS else { return 0 }
-        return Int(info.resident_size) / (1024 * 1024)
+        guard result == 0 else { return 0 }
+        return Int(usage.ri_phys_footprint) / (1024 * 1024)
+    }
+
+    static func findWebContentPIDs() -> [pid_t] {
+        // WebContent processes are children of the app, named "com.apple.WebKit.WebContent"
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        var pids: [pid_t] = []
+
+        // List all processes and find WebContent ones
+        let bufferSize = proc_listallpids(nil, 0)
+        guard bufferSize > 0 else { return [] }
+        var allPIDs = [pid_t](repeating: 0, count: Int(bufferSize))
+        let count = proc_listallpids(&allPIDs, Int32(allPIDs.count * MemoryLayout<pid_t>.size))
+        guard count > 0 else { return [] }
+
+        for i in 0..<Int(count) {
+            let pid = allPIDs[i]
+            var buf = [CChar](repeating: 0, count: 1024)
+            let len = proc_pidpath(pid, &buf, UInt32(buf.count))
+            guard len > 0 else { continue }
+            let path = String(cString: buf)
+            if path.contains("WebContent") || path.contains("com.apple.WebKit.WebContent") {
+                // Check if it's a child of our process (ppid == myPID)
+                var info = proc_bsdinfo()
+                let infoSize = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+                if infoSize > 0 && info.pbi_ppid == UInt32(myPID) {
+                    pids.append(pid)
+                }
+            }
+        }
+        return pids
+    }
+
+    @objc private func openActivityMonitor() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
     }
 
     @objc private func sleepContainerNow(_ sender: NSMenuItem) {
