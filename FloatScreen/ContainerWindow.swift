@@ -38,7 +38,21 @@ final class ContainerWindow: NSPanel {
 
     var soundMode: SoundMode = .floatScreenSound
     private(set) var isHiddenFromScreenSharing = false
+    var sleepDelayMinutes: Int = 0
+    private(set) var isSleeping = false
+    private var sleepTimer: Timer?
+    private var sleepURL: URL?
     var savedFrameBeforeMinimize: NSRect?
+
+    static let sleepOptions: [(String, Int)] = [
+        ("Off", 0), ("5 minutes", 5), ("15 minutes", 15),
+        ("30 minutes", 30), ("60 minutes", 60), ("30 seconds (debug)", -1),
+    ]
+
+    private static let notificationSiteHosts = [
+        "app.slack.com", "slack.com", "web.whatsapp.com",
+        "mail.google.com", "discord.com",
+    ]
     var savedBubbleOrigin: NSPoint?
     var savedBubbleEdge: String?
     private var zoomHideTimer: Timer?
@@ -155,6 +169,12 @@ final class ContainerWindow: NSPanel {
             WebViewConfig.applyUserAgent(to: webView, mobile: isMobileMode)
             if let sm = s.soundMode, let mode = SoundMode(rawValue: sm) {
                 soundMode = mode
+            }
+            if let delay = s.sleepDelayMinutes { sleepDelayMinutes = delay }
+            if s.isSleeping == true {
+                // Will be put to sleep immediately after minimize on restore
+                isSleeping = false
+                sleepURL = URL(string: s.urlString)
             }
         }
 
@@ -279,6 +299,77 @@ final class ContainerWindow: NSPanel {
         } else if unreadCount > 0 || hasUnreadDot {
             clearUnreadBadge()
         }
+    }
+
+    // MARK: - Sleep
+
+    func startSleepTimer() {
+        sleepTimer?.invalidate()
+        guard sleepDelayMinutes != 0 else { return }
+        let seconds: TimeInterval = sleepDelayMinutes == -1 ? 30 : TimeInterval(sleepDelayMinutes * 60)
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.goToSleep()
+        }
+    }
+
+    func cancelSleepTimer() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+    }
+
+    func goToSleep() {
+        guard !isSleeping else { return }
+        isSleeping = true
+        sleepURL = webView.url
+
+        webView.configuration.userContentController.removeAllScriptMessageHandlers()
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        webView.removeFromSuperview()
+
+        titleObservation = nil
+        print("[Sleep] \(pageTitle) went to sleep, URL: \(sleepURL?.absoluteString ?? "nil")")
+
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.markSleeping(true)
+        }
+    }
+
+    func wakeUp() {
+        guard isSleeping else { return }
+        isSleeping = false
+
+        let newWebView = WKWebView(
+            frame: .zero,
+            configuration: WebViewConfig.makeConfiguration(profile: profile)
+        )
+        newWebView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(newWebView)
+
+        webViewTopConstraint?.isActive = false
+        webViewTopConstraint = newWebView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor)
+        NSLayoutConstraint.activate([
+            webViewTopConstraint,
+            newWebView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            newWebView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            newWebView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+        ])
+
+        self.webView = newWebView
+        self.webConfig = WebViewConfig()
+        webConfig.attach(to: newWebView, container: self)
+        startTitleObservation()
+
+        if let url = sleepURL {
+            newWebView.load(URLRequest(url: url))
+        }
+        sleepURL = nil
+        print("[Sleep] \(pageTitle) woke up")
+    }
+
+    var isNotificationSite: Bool {
+        guard let host = webView.url?.host ?? sleepURL?.host else { return false }
+        return Self.notificationSiteHosts.contains(where: { host.hasSuffix($0) })
     }
 
     func setAlwaysOnTop(_ enabled: Bool) {
@@ -577,7 +668,9 @@ final class ContainerWindow: NSPanel {
             bubbleY: bubble.map { Double($0.frame.origin.y) },
             bubbleEdge: savedBubbleEdge,
             soundMode: soundMode.rawValue,
-            hiddenFromScreenSharing: isHiddenFromScreenSharing
+            hiddenFromScreenSharing: isHiddenFromScreenSharing,
+            sleepDelayMinutes: sleepDelayMinutes != 0 ? sleepDelayMinutes : nil,
+            isSleeping: isSleeping ? true : nil
         )
     }
 }

@@ -360,6 +360,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         bubbleItem.submenu = bubbleMenu
         menu.addItem(bubbleItem)
 
+        // Memory usage submenu
+        let memItem = NSMenuItem(title: "Memory Usage", action: nil, keyEquivalent: "")
+        let memMenu = NSMenu()
+        memMenu.delegate = self
+        memMenu.identifier = NSUserInterfaceItemIdentifier("memory")
+        memItem.submenu = memMenu
+        menu.addItem(memItem)
+
         menu.addItem(.separator())
 
         let reopenItem = NSMenuItem(
@@ -423,7 +431,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - NSMenuDelegate (favorites submenu)
 
+    private static let memoryMenuID = NSUserInterfaceItemIdentifier("memory")
+
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu.identifier == Self.memoryMenuID {
+            buildMemoryMenu(menu)
+            return
+        }
         guard menu.identifier == Self.favoritesMenuID else { return }
         menu.removeAllItems()
 
@@ -722,6 +736,57 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func showAllInScreenSharing() {
         appDelegate?.containers.forEach { $0.setHiddenFromScreenSharing(false) }
+        rebuildMenu()
+    }
+
+    private func buildMemoryMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let containers = appDelegate?.containers else { return }
+
+        let totalMB = Self.processMemoryMB()
+        let totalItem = NSMenuItem(title: "FloatScreen total: \(totalMB) MB", action: nil, keyEquivalent: "")
+        totalItem.isEnabled = false
+        menu.addItem(totalItem)
+        menu.addItem(.separator())
+
+        for container in containers {
+            let name = container.pageTitle
+            let badge = container.profile.emoji
+            let status = container.isSleeping ? " (sleeping)" : ""
+            let item = NSMenuItem(
+                title: "\(badge) \(name)\(status)",
+                action: #selector(focusContainer(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = container
+            menu.addItem(item)
+
+            if !container.isSleeping {
+                let sleepItem = NSMenuItem(title: "  Sleep Now", action: #selector(sleepContainerNow(_:)), keyEquivalent: "")
+                sleepItem.target = self
+                sleepItem.representedObject = container
+                sleepItem.indentationLevel = 1
+                menu.addItem(sleepItem)
+            }
+        }
+    }
+
+    static func processMemoryMB() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        return Int(info.resident_size) / (1024 * 1024)
+    }
+
+    @objc private func sleepContainerNow(_ sender: NSMenuItem) {
+        guard let container = sender.representedObject as? ContainerWindow else { return }
+        container.goToSleep()
         rebuildMenu()
     }
 

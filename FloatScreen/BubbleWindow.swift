@@ -18,6 +18,7 @@ final class BubbleWindow: NSPanel {
     private var windowOriginAtDragStart: NSPoint?
     private var isDragging = false
     var neverFade = false
+    fileprivate var isSleepingIndicator = false
     private var idleTimer: Timer?
     private var hoverTracker: NSTrackingArea?
 
@@ -268,8 +269,14 @@ final class BubbleWindow: NSPanel {
         container?.savedBubbleEdge = frame.midX > vis.midX ? "right" : "left"
     }
 
+    func markSleeping(_ sleeping: Bool) {
+        isSleepingIndicator = sleeping
+        contentView?.toolTip = sleeping ? "Sleeping — notifications paused" : container?.pageTitle
+        (contentView as? BubbleContentView)?.needsDisplay = true
+    }
+
     func updateContent() {
-        contentView?.toolTip = container?.pageTitle
+        contentView?.toolTip = isSleepingIndicator ? "Sleeping — notifications paused" : container?.pageTitle
         (contentView as? BubbleContentView)?.needsDisplay = true
     }
 
@@ -378,6 +385,24 @@ final class BubbleWindow: NSPanel {
         soundItem.submenu = soundMenu
         menu.addItem(soundItem)
 
+        let sleepItem = NSMenuItem(title: "Sleep When Minimized", action: nil, keyEquivalent: "")
+        let sleepMenu = NSMenu()
+        for (label, val) in ContainerWindow.sleepOptions {
+            let item = NSMenuItem(title: label, action: #selector(setSleepDelay(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = val
+            item.state = container?.sleepDelayMinutes == val ? .on : .off
+            sleepMenu.addItem(item)
+        }
+        if !(container?.isSleeping ?? false) {
+            sleepMenu.addItem(.separator())
+            let sleepNow = NSMenuItem(title: "Sleep Now", action: #selector(sleepNowAction), keyEquivalent: "")
+            sleepNow.target = self
+            sleepMenu.addItem(sleepNow)
+        }
+        sleepItem.submenu = sleepMenu
+        menu.addItem(sleepItem)
+
         let neverFadeItem = NSMenuItem(
             title: "Never Fade",
             action: #selector(toggleNeverFade(_:)),
@@ -415,6 +440,24 @@ final class BubbleWindow: NSPanel {
         guard let raw = sender.representedObject as? String,
               let mode = ContainerWindow.SoundMode(rawValue: raw) else { return }
         container?.soundMode = mode
+    }
+    @objc private func setSleepDelay(_ sender: NSMenuItem) {
+        guard let container else { return }
+        let delay = sender.tag
+        if delay != 0 && container.isNotificationSite {
+            let alert = NSAlert()
+            alert.messageText = "This site sends notifications"
+            alert.informativeText = "Sleeping will pause notifications from \(container.pageTitle). Continue?"
+            alert.addButton(withTitle: "Enable Sleep")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        container.sleepDelayMinutes = delay
+        container.cancelSleepTimer()
+        if delay != 0 { container.startSleepTimer() }
+    }
+    @objc private func sleepNowAction() {
+        container?.goToSleep()
     }
     @objc private func toggleNeverFade(_ sender: NSMenuItem) {
         neverFade.toggle()
@@ -523,6 +566,18 @@ private class BubbleContentView: NSView {
         }
 
         ctx.restoreGState()
+
+        // Sleeping indicator
+        if owner.isSleepingIndicator {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: isDark ? NSColor.systemYellow.withAlphaComponent(0.8) : NSColor.systemOrange,
+            ]
+            let zzz = NSAttributedString(string: "zzz", attributes: attrs)
+            let zSize = zzz.size()
+            zzz.draw(at: NSPoint(x: circleRect.midX - zSize.width / 2,
+                                 y: circleRect.minY - zSize.height - 1))
+        }
 
         // Badge at top-right of circle
         if owner.badgeCount > 0 || owner.badgeDot {

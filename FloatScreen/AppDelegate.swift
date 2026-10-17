@@ -106,6 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubbles.append(bubble)
         bubble.placeAtSavedOrDefault()
         bubble.orderFront(nil)
+        if container.sleepDelayMinutes != 0 { container.startSleepTimer() }
         menuBarController?.rebuildMenu()
     }
 
@@ -121,6 +122,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubble.orderOut(nil)
 
         container.suppressCountChanges()
+        container.cancelSleepTimer()
+        if container.isSleeping { container.wakeUp() }
 
         let targetFrame = container.savedFrameBeforeMinimize ?? container.frame
         container.savedFrameBeforeMinimize = nil
