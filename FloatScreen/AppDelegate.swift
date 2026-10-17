@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var containers: [ContainerWindow] = []
@@ -6,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var recentlyClosed: [ContainerState] = []
     private var menuBarController: MenuBarController?
     private var globalShortcut: GlobalShortcut?
+    let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarController = MenuBarController(appDelegate: self)

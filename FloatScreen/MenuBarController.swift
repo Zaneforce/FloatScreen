@@ -391,6 +391,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let updateItem = NSMenuItem(
+            title: "Check for Updates\u{2026}",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        menu.addItem(updateItem)
+
+        let autoUpdateItem = NSMenuItem(
+            title: "Automatic Updates",
+            action: #selector(toggleAutoUpdates(_:)),
+            keyEquivalent: ""
+        )
+        autoUpdateItem.target = self
+        autoUpdateItem.state = (appDelegate?.updaterController.updater.automaticallyChecksForUpdates ?? true) ? .on : .off
+        menu.addItem(autoUpdateItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit FloatScreen",
             action: #selector(quitApp),
@@ -703,6 +722,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func showAllInScreenSharing() {
         appDelegate?.containers.forEach { $0.setHiddenFromScreenSharing(false) }
+        rebuildMenu()
+    }
+
+    @objc private func checkForUpdates() {
+        appDelegate?.updaterController.checkForUpdates(nil)
+    }
+
+    @objc private func toggleAutoUpdates(_ sender: NSMenuItem) {
+        guard let updater = appDelegate?.updaterController.updater else { return }
+        updater.automaticallyChecksForUpdates.toggle()
         rebuildMenu()
     }
 
