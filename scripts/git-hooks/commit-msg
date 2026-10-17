@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Strip AI attribution lines from commit messages automatically.
+# Installed via: git config core.hooksPath scripts/git-hooks
+
+tmpfile=$(mktemp)
+grep -viE 'Co-Authored-By:.*Claude|Generated with.*Claude' "$1" > "$tmpfile"
+# Remove trailing blank lines
+sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmpfile" > "$1"
+rm -f "$tmpfile"
