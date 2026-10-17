@@ -28,8 +28,10 @@
     <key>SUFeedURL</key>
     <string>https://zaneforce.github.io/FloatScreen/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string>REPLACE_WITH_YOUR_EDDSA_PUBLIC_KEY</string>
+    <string>ZxWZ1WlGgnfDdJ96agcDsECtQ3dtHvUdsKucomf5F5k=</string>
     <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUEnableInstallerLauncherService</key>
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>FloatScreen needs camera access so web apps like Google Meet, Slack, and Discord can use your camera.</string>

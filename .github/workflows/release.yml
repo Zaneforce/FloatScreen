@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve SPM packages
+        run: |
+          xcodebuild -project FloatScreen.xcodeproj -scheme FloatScreen \
+            -resolvePackageDependencies
+
+      - name: Build universal app
+        run: |
+          xcodebuild -project FloatScreen.xcodeproj -scheme FloatScreen \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION=${{ steps.version.outputs.VERSION }} \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.VERSION }} \
+            CODE_SIGN_IDENTITY="-" \
+            build
+
+      - name: Create ZIP
+        run: |
+          cd build/DerivedData/Build/Products/Release
+          ditto -c -k --keepParent FloatScreen.app \
+            ${{ github.workspace }}/FloatScreen-${{ steps.version.outputs.VERSION }}.zip
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "FloatScreen" \
+            -srcfolder build/DerivedData/Build/Products/Release/FloatScreen.app \
+            -ov -format UDZO \
+            FloatScreen-${{ steps.version.outputs.VERSION }}.dmg
+
+      - name: Sign update with Sparkle
+        run: |
+          SPARKLE_BIN=$(find build/DerivedData/SourcePackages -name "sign_update" -type f | head -1)
+          if [ -z "$SPARKLE_BIN" ]; then
+            echo "sign_update not found, skipping"
+            exit 0
+          fi
+          SIGNATURE=$("$SPARKLE_BIN" FloatScreen-${{ steps.version.outputs.VERSION }}.zip \
+            -s "${{ secrets.SPARKLE_PRIVATE_KEY }}" 2>&1 || true)
+          echo "SPARKLE_SIGNATURE<<EOF" >> "$GITHUB_ENV"
+          echo "$SIGNATURE" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+          echo "Sparkle signature: $SIGNATURE"
+
+      - name: Generate appcast.xml
+        run: |
+          ZIP_SIZE=$(stat -f%z FloatScreen-${{ steps.version.outputs.VERSION }}.zip)
+          cat > appcast.xml << APPCAST
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>FloatScreen</title>
+              <item>
+                <title>Version ${{ steps.version.outputs.VERSION }}</title>
+                <pubDate>$(date -R)</pubDate>
+                <sparkle:version>${{ steps.version.outputs.VERSION }}</sparkle:version>
+                <sparkle:shortVersionString>${{ steps.version.outputs.VERSION }}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                <enclosure url="https://github.com/Zaneforce/FloatScreen/releases/download/v${{ steps.version.outputs.VERSION }}/FloatScreen-${{ steps.version.outputs.VERSION }}.zip"
+                  length="${ZIP_SIZE}"
+                  type="application/octet-stream"
+                  sparkle:edSignature="${SPARKLE_SIGNATURE}" />
+              </item>
+            </channel>
+          </rss>
+          APPCAST
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "v${{ steps.version.outputs.VERSION }}" \
+            "FloatScreen-${{ steps.version.outputs.VERSION }}.zip" \
+            "FloatScreen-${{ steps.version.outputs.VERSION }}.dmg" \
+            --title "v${{ steps.version.outputs.VERSION }}" \
+            --notes "FloatScreen ${{ steps.version.outputs.VERSION }}" \
+            --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish appcast to GitHub Pages
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan gh-pages-tmp
+          git rm -rf . 2>/dev/null || true
+          cp appcast.xml .
+          git add appcast.xml
+          git commit -m "Update appcast for v${{ steps.version.outputs.VERSION }}"
+          git push origin gh-pages-tmp:gh-pages --force
