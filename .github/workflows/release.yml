@@ -41,42 +41,45 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             build
 
-      - name: Create ZIP
+      - name: Create ZIP and DMG
         run: |
+          mkdir -p "$RUNNER_TEMP/release"
           cd build/DerivedData/Build/Products/Release
           ditto -c -k --keepParent FloatScreen.app \
-            ${{ github.workspace }}/FloatScreen-${{ steps.version.outputs.VERSION }}.zip
-
-      - name: Create DMG
-        run: |
+            "$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.zip"
           hdiutil create -volname "FloatScreen" \
-            -srcfolder build/DerivedData/Build/Products/Release/FloatScreen.app \
+            -srcfolder FloatScreen.app \
             -ov -format UDZO \
-            FloatScreen-${{ steps.version.outputs.VERSION }}.dmg
+            "$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.dmg"
 
       - name: Sign update with Sparkle
         run: |
           SPARKLE_BIN=$(find build/DerivedData/SourcePackages -name "sign_update" -type f | head -1)
           if [ -z "$SPARKLE_BIN" ]; then
-            echo "sign_update not found, skipping"
+            echo "::warning::sign_update not found, skipping Sparkle signing"
+            echo "SPARKLE_SIGNATURE=" >> "$GITHUB_ENV"
             exit 0
           fi
-          SIGNATURE=$("$SPARKLE_BIN" FloatScreen-${{ steps.version.outputs.VERSION }}.zip \
+          SIGNATURE=$("$SPARKLE_BIN" \
+            "$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.zip" \
             -s "${{ secrets.SPARKLE_PRIVATE_KEY }}" 2>&1 || true)
           echo "SPARKLE_SIGNATURE<<EOF" >> "$GITHUB_ENV"
           echo "$SIGNATURE" >> "$GITHUB_ENV"
           echo "EOF" >> "$GITHUB_ENV"
-          echo "Sparkle signature: $SIGNATURE"
 
       - name: Generate appcast.xml
         run: |
-          ZIP_SIZE=$(stat -f%z FloatScreen-${{ steps.version.outputs.VERSION }}.zip)
-          cat > appcast.xml << APPCAST
+          ZIP="$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.zip"
+          ZIP_SIZE=$(stat -f%z "$ZIP")
+          mkdir -p "$RUNNER_TEMP/pages"
+          cat > "$RUNNER_TEMP/pages/appcast.xml" << 'HEREDOC'
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
             <channel>
               <title>FloatScreen</title>
               <item>
+          HEREDOC
+          cat >> "$RUNNER_TEMP/pages/appcast.xml" << HEREDOC
                 <title>Version ${{ steps.version.outputs.VERSION }}</title>
                 <pubDate>$(date -R)</pubDate>
                 <sparkle:version>${{ steps.version.outputs.VERSION }}</sparkle:version>
@@ -89,13 +92,13 @@ jobs:
               </item>
             </channel>
           </rss>
-          APPCAST
+          HEREDOC
 
       - name: Create GitHub Release
         run: |
           gh release create "v${{ steps.version.outputs.VERSION }}" \
-            "FloatScreen-${{ steps.version.outputs.VERSION }}.zip" \
-            "FloatScreen-${{ steps.version.outputs.VERSION }}.dmg" \
+            "$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.zip" \
+            "$RUNNER_TEMP/release/FloatScreen-${{ steps.version.outputs.VERSION }}.dmg" \
             --title "v${{ steps.version.outputs.VERSION }}" \
             --notes "FloatScreen ${{ steps.version.outputs.VERSION }}" \
             --repo "${{ github.repository }}"
@@ -103,12 +106,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish appcast to GitHub Pages
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git checkout --orphan gh-pages-tmp
-          git rm -rf . 2>/dev/null || true
-          cp appcast.xml .
-          git add appcast.xml
-          git commit -m "Update appcast for v${{ steps.version.outputs.VERSION }}"
-          git push origin gh-pages-tmp:gh-pages --force
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ runner.temp }}/pages
+          keep_files: true
