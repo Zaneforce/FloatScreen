@@ -326,6 +326,40 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         showAllShareItem.target = self
         menu.addItem(showAllShareItem)
 
+        // Bubble settings submenu
+        let bubbleItem = NSMenuItem(title: "Bubbles", action: nil, keyEquivalent: "")
+        let bubbleMenu = NSMenu()
+        let fadeItem = NSMenuItem(title: "Fade When Idle", action: #selector(toggleBubbleFade(_:)), keyEquivalent: "")
+        fadeItem.target = self
+        fadeItem.state = BubbleSettings.shared.fadeEnabled ? .on : .off
+        bubbleMenu.addItem(fadeItem)
+
+        let delayItem = NSMenuItem(title: "Idle Delay", action: nil, keyEquivalent: "")
+        let delayMenu = NSMenu()
+        for (label, val) in BubbleSettings.delayOptions {
+            let item = NSMenuItem(title: label, action: #selector(setBubbleDelay(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = Int(val)
+            item.state = BubbleSettings.shared.idleDelay == val ? .on : .off
+            delayMenu.addItem(item)
+        }
+        delayItem.submenu = delayMenu
+        bubbleMenu.addItem(delayItem)
+
+        let opItem = NSMenuItem(title: "Idle Opacity", action: nil, keyEquivalent: "")
+        let opMenu = NSMenu()
+        for (label, val) in BubbleSettings.opacityOptions {
+            let item = NSMenuItem(title: label, action: #selector(setBubbleOpacity(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = val
+            item.state = abs(BubbleSettings.shared.idleOpacity - val) < 0.01 ? .on : .off
+            opMenu.addItem(item)
+        }
+        opItem.submenu = opMenu
+        bubbleMenu.addItem(opItem)
+        bubbleItem.submenu = bubbleMenu
+        menu.addItem(bubbleItem)
+
         menu.addItem(.separator())
 
         let reopenItem = NSMenuItem(
@@ -646,6 +680,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func hideAllFromScreenSharing() {
         appDelegate?.containers.forEach { $0.setHiddenFromScreenSharing(true) }
+        rebuildMenu()
+    }
+
+    @objc private func toggleBubbleFade(_ sender: NSMenuItem) {
+        BubbleSettings.shared.fadeEnabled.toggle()
+        appDelegate?.bubbles.forEach { $0.resetIdleTimer() }
+        rebuildMenu()
+    }
+
+    @objc private func setBubbleDelay(_ sender: NSMenuItem) {
+        BubbleSettings.shared.idleDelay = TimeInterval(sender.tag)
+        appDelegate?.bubbles.forEach { $0.resetIdleTimer() }
+        rebuildMenu()
+    }
+
+    @objc private func setBubbleOpacity(_ sender: NSMenuItem) {
+        guard let val = sender.representedObject as? CGFloat else { return }
+        BubbleSettings.shared.idleOpacity = val
         rebuildMenu()
     }
 

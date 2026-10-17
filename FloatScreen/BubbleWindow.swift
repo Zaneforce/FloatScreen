@@ -17,6 +17,9 @@ final class BubbleWindow: NSPanel {
     private var dragStart: NSPoint?
     private var windowOriginAtDragStart: NSPoint?
     private var isDragging = false
+    var neverFade = false
+    private var idleTimer: Timer?
+    private var hoverTracker: NSTrackingArea?
 
     init(container: ContainerWindow) {
         self.container = container
@@ -36,14 +39,59 @@ final class BubbleWindow: NSPanel {
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
+        // Inherit screen sharing setting from container
+        if container.isHiddenFromScreenSharing {
+            sharingType = .none
+        }
+
         let bubbleView = BubbleContentView(owner: self)
         contentView = bubbleView
 
+        // Hover tracking for idle fade
+        let tracker = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        bubbleView.addTrackingArea(tracker)
+        hoverTracker = tracker
+
         contentView?.toolTip = container.pageTitle
         fetchFavicon()
+        resetIdleTimer()
     }
 
     override var canBecomeKey: Bool { true }
+
+    override func mouseEntered(with event: NSEvent) {
+        showFull()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        resetIdleTimer()
+    }
+
+    func showFull() {
+        idleTimer?.invalidate()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            self.animator().alphaValue = 1.0
+        }
+    }
+
+    func resetIdleTimer() {
+        idleTimer?.invalidate()
+        guard BubbleSettings.shared.fadeEnabled, !neverFade else { return }
+        let delay = BubbleSettings.shared.idleDelay
+        idleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self, !self.isDragging else { return }
+            let target = BubbleSettings.shared.idleOpacity
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.5
+                self.animator().alphaValue = target
+            }
+        }
+    }
 
     // MARK: - Badge
 
@@ -52,8 +100,10 @@ final class BubbleWindow: NSPanel {
         badgeDot = false
         (contentView as? BubbleContentView)?.needsDisplay = true
         if playSound {
+            showFull()
             popAnimation()
             pulseAnimation()
+            resetIdleTimer()
             if container?.soundMode == .floatScreenSound {
                 NotificationSound.shared.playUnlessRecentlyPosted()
             }
@@ -65,8 +115,10 @@ final class BubbleWindow: NSPanel {
         badgeDot = true
         badgeCount = 0
         (contentView as? BubbleContentView)?.needsDisplay = true
+        showFull()
         popAnimation()
         pulseAnimation()
+        resetIdleTimer()
     }
 
     func clearBadge() {
@@ -113,6 +165,7 @@ final class BubbleWindow: NSPanel {
             dragStart = NSEvent.mouseLocation
             windowOriginAtDragStart = frame.origin
             isDragging = false
+            showFull()
         case .leftMouseDragged:
             guard let start = dragStart, let origin = windowOriginAtDragStart else { break }
             let current = NSEvent.mouseLocation
@@ -133,6 +186,7 @@ final class BubbleWindow: NSPanel {
             dragStart = nil
             windowOriginAtDragStart = nil
             isDragging = false
+            resetIdleTimer()
         case .rightMouseDown:
             showContextMenu(at: event)
         default:
@@ -324,6 +378,15 @@ final class BubbleWindow: NSPanel {
         soundItem.submenu = soundMenu
         menu.addItem(soundItem)
 
+        let neverFadeItem = NSMenuItem(
+            title: "Never Fade",
+            action: #selector(toggleNeverFade(_:)),
+            keyEquivalent: ""
+        )
+        neverFadeItem.target = self
+        neverFadeItem.state = neverFade ? .on : .off
+        menu.addItem(neverFadeItem)
+
         let hideShareItem = NSMenuItem(
             title: "Hide from Screen Sharing",
             action: #selector(toggleScreenSharing(_:)),
@@ -352,6 +415,10 @@ final class BubbleWindow: NSPanel {
         guard let raw = sender.representedObject as? String,
               let mode = ContainerWindow.SoundMode(rawValue: raw) else { return }
         container?.soundMode = mode
+    }
+    @objc private func toggleNeverFade(_ sender: NSMenuItem) {
+        neverFade.toggle()
+        if neverFade { showFull() } else { resetIdleTimer() }
     }
     @objc private func toggleScreenSharing(_ sender: NSMenuItem) {
         guard let container else { return }
@@ -518,6 +585,45 @@ private class BubbleContentView: NSView {
         attrStr.draw(at: NSPoint(x: badgeRect.midX - textSize.width / 2,
                                  y: badgeRect.midY - textSize.height / 2))
     }
+}
+
+// MARK: - Bubble Settings
+
+final class BubbleSettings {
+    static let shared = BubbleSettings()
+
+    private static let fadeEnabledKey = "bubble.fadeEnabled"
+    private static let idleDelayKey = "bubble.idleDelay"
+    private static let idleOpacityKey = "bubble.idleOpacity"
+
+    var fadeEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Self.fadeEnabledKey) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Self.fadeEnabledKey) }
+    }
+
+    var idleDelay: TimeInterval {
+        get {
+            let v = UserDefaults.standard.double(forKey: Self.idleDelayKey)
+            return v > 0 ? v : 5.0
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.idleDelayKey) }
+    }
+
+    var idleOpacity: CGFloat {
+        get {
+            let v = UserDefaults.standard.double(forKey: Self.idleOpacityKey)
+            return v > 0 ? CGFloat(v) : 0.4
+        }
+        set { UserDefaults.standard.set(Double(newValue), forKey: Self.idleOpacityKey) }
+    }
+
+    static let delayOptions: [(String, TimeInterval)] = [
+        ("3 seconds", 3), ("5 seconds", 5), ("10 seconds", 10), ("30 seconds", 30)
+    ]
+
+    static let opacityOptions: [(String, CGFloat)] = [
+        ("20%", 0.2), ("40%", 0.4), ("60%", 0.6), ("80%", 0.8)
+    ]
 }
 
 // MARK: - Notification Sound
