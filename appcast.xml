@@ -3,13 +3,13 @@
   <channel>
     <title>FloatScreen</title>
     <item>
-      <title>Version 1.0.0</title>
-      <pubDate>Sat, 17 Oct 2026 16:32:37 +0000</pubDate>
-      <sparkle:version>1.0.0</sparkle:version>
-      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <title>Version 1.0.2</title>
+      <pubDate>Sun, 18 Oct 2026 04:07:10 +0000</pubDate>
+      <sparkle:version>10002</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/Zaneforce/FloatScreen/releases/download/v1.0.0/FloatScreen-1.0.0.zip"
-        length="1494266"
+      <enclosure url="https://github.com/Zaneforce/FloatScreen/releases/download/v1.0.2/FloatScreen-1.0.2.zip"
+        length="1499205"
         type="application/octet-stream"
         sparkle:edSignature="Warning: The -s option for passing the private EdDSA key is insecure and deprecated. Please see its help usage for more information.
 ERROR! Specifying private key as an argument is no longer supported." />
