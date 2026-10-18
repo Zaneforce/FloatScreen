@@ -481,7 +481,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func focusContainer(_ sender: NSMenuItem) {
         guard let container = sender.representedObject as? ContainerWindow else { return }
-        container.makeKeyAndOrderFront(nil)
+        appDelegate?.focusOrRestoreContainer(container)
     }
 
     @objc private func openFavorite(_ sender: NSMenuItem) {

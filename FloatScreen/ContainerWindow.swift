@@ -2,9 +2,9 @@ import AppKit
 import WebKit
 
 final class ContainerWindow: NSPanel {
-    private(set) var webView: WKWebView
+    private(set) var webView: WKWebView!
     let toolbarView: ToolbarView
-    var webConfig: WebViewConfig
+    var webConfig: WebViewConfig?
     let containerID: UUID
     private(set) var profile: Profile
 
@@ -157,7 +157,7 @@ final class ContainerWindow: NSPanel {
 
         toolbarView.delegate = self
         toolbarView.setProfile(self.profile)
-        webConfig.attach(to: webView, container: self)
+        webConfig?.attach(to: webView, container: self)
 
         if let s = state {
             alphaValue = CGFloat(s.opacity)
@@ -213,7 +213,7 @@ final class ContainerWindow: NSPanel {
     // otherwise forward to the web page (e.g. close a dialog).
     override func cancelOperation(_ sender: Any?) {
         if isInContainerFullscreen {
-            webView.evaluateJavaScript(
+            webView?.evaluateJavaScript(
                 "document.fullscreenElement ? document.exitFullscreen() : null",
                 completionHandler: nil
             )
@@ -232,14 +232,22 @@ final class ContainerWindow: NSPanel {
         super.sendEvent(event)
     }
 
-    var currentURL: URL? { webView.url }
-    var pageTitle: String { webView.title ?? webView.url?.host ?? "New Tab" }
+    var savedPageTitle: String = "New Tab"
+
+    var currentURL: URL? { isSleeping ? sleepURL : webView?.url }
+    var pageTitle: String {
+        if isSleeping { return savedPageTitle }
+        let t = webView?.title ?? webView?.url?.host ?? savedPageTitle
+        if !t.isEmpty { savedPageTitle = t }
+        return savedPageTitle
+    }
     private(set) var unreadCount: Int = 0
     private(set) var hasUnreadDot: Bool = false
     private var lastNotifiedCount: Int = 0
     private var countChangeSuppressionEnd: Date = .distantPast
 
     func webViewDidUpdate() {
+        guard let webView else { return }
         toolbarView.updateURL(webView.url?.absoluteString ?? "")
         toolbarView.updateNavigation(canGoBack: webView.canGoBack, canGoForward: webView.canGoForward)
         toolbarView.updateMobileMode(isMobileMode, disabled: isAlwaysDesktopSite)
@@ -291,7 +299,7 @@ final class ContainerWindow: NSPanel {
     }
 
     private func detectUnreadFromTitle() {
-        let t = webView.title ?? ""
+        let t = webView?.title ?? ""
         if let count = UnreadDetector.parseCountFromTitle(t) {
             updateUnreadCount(count)
         } else if UnreadDetector.hasUnreadIndicator(t) {
@@ -318,17 +326,31 @@ final class ContainerWindow: NSPanel {
     }
 
     func goToSleep() {
-        guard !isSleeping else { return }
+        guard !isSleeping, let wv = webView else { return }
         isSleeping = true
-        sleepURL = webView.url
+        sleepURL = wv.url
+        _ = pageTitle // cache savedPageTitle before releasing
 
-        webView.configuration.userContentController.removeAllScriptMessageHandlers()
-        webView.stopLoading()
-        webView.loadHTMLString("", baseURL: nil)
-        webView.removeFromSuperview()
-
+        // Invalidate all observers and timers
+        titleObservation?.invalidate()
         titleObservation = nil
-        print("[Sleep] \(pageTitle) went to sleep, URL: \(sleepURL?.absoluteString ?? "nil")")
+        autoMobileDebounceTimer?.invalidate()
+        autoMobileDebounceTimer = nil
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+
+        // Fully release WKWebView so its WebContent process exits
+        let ucc = wv.configuration.userContentController
+        ucc.removeAllScriptMessageHandlers()
+        ucc.removeAllUserScripts()
+        wv.navigationDelegate = nil
+        wv.uiDelegate = nil
+        wv.stopLoading()
+        wv.removeFromSuperview()
+        webConfig = nil
+        webView = nil
+
+        print("[Sleep] \(savedPageTitle) went to sleep, URL: \(sleepURL?.absoluteString ?? "nil")")
 
         if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
             bubble.markSleeping(true)
@@ -356,19 +378,24 @@ final class ContainerWindow: NSPanel {
         ])
 
         self.webView = newWebView
-        self.webConfig = WebViewConfig()
-        webConfig.attach(to: newWebView, container: self)
+        let config = WebViewConfig()
+        self.webConfig = config
+        config.attach(to: newWebView, container: self)
         startTitleObservation()
 
         if let url = sleepURL {
             newWebView.load(URLRequest(url: url))
         }
         sleepURL = nil
-        print("[Sleep] \(pageTitle) woke up")
+        print("[Sleep] \(savedPageTitle) woke up")
+
+        if let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first(where: { $0.container === self }) {
+            bubble.markSleeping(false)
+        }
     }
 
     var isNotificationSite: Bool {
-        guard let host = webView.url?.host ?? sleepURL?.host else { return false }
+        guard let host = webView?.url?.host ?? sleepURL?.host else { return false }
         return Self.notificationSiteHosts.contains(where: { host.hasSuffix($0) })
     }
 
@@ -395,36 +422,49 @@ final class ContainerWindow: NSPanel {
     }
 
     func cleanupAndClose() {
-        webView.evaluateJavaScript(
-            "document.querySelectorAll('video,audio').forEach(function(m){m.pause()})",
-            completionHandler: nil
-        )
-        webView.configuration.userContentController.removeAllScriptMessageHandlers()
-        webView.stopLoading()
-        webView.loadHTMLString("", baseURL: nil)
+        if let wv = webView {
+            wv.evaluateJavaScript(
+                "document.querySelectorAll('video,audio').forEach(function(m){m.pause()})",
+                completionHandler: nil
+            )
+            wv.configuration.userContentController.removeAllScriptMessageHandlers()
+            wv.configuration.userContentController.removeAllUserScripts()
+            wv.navigationDelegate = nil
+            wv.uiDelegate = nil
+            wv.stopLoading()
+            wv.removeFromSuperview()
+            webView = nil
+            webConfig = nil
+        }
+        titleObservation = nil
+        sleepTimer?.invalidate()
         close()
     }
 
     private var titleObservation: NSKeyValueObservation?
 
     func startTitleObservation() {
+        guard let webView else { return }
         titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
             self?.detectUnreadFromTitle()
         }
     }
 
     func syncVisibilityPolyfill() {
-        let isMedia = webView.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
+        guard let wv = webView else { return }
+        let isMedia = wv.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
         let flag = isMedia ? "true" : "false"
-        webView.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
+        wv.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
     }
 
     func setKeepVisible(_ keep: Bool) {
+        guard let wv = webView else { return }
         let flag = keep ? "true" : "false"
-        webView.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
+        wv.evaluateJavaScript("window.__fsKeepVisible = \(flag)", completionHandler: nil)
     }
 
     func setPageHidden(_ hidden: Bool) {
+        guard let webView else { return }
         let isMedia = webView.url.flatMap { WebViewConfig.isMediaSite(host: $0.host ?? "") } ?? false
         if isMedia && hidden {
             // Media sites keep visible so audio continues
@@ -439,12 +479,12 @@ final class ContainerWindow: NSPanel {
     // MARK: - Profile Switching
 
     func switchProfile(to newProfile: Profile) {
-        let currentURL = webView.url
+        let currentURL = webView?.url ?? sleepURL
         self.profile = newProfile
         accentBar.layer?.backgroundColor = newProfile.color.cgColor
         toolbarView.setProfile(newProfile)
 
-        webView.removeFromSuperview()
+        webView?.removeFromSuperview()
         webViewTopConstraint.isActive = false
 
         let newWebView = WKWebView(
@@ -464,7 +504,7 @@ final class ContainerWindow: NSPanel {
 
         self.webView = newWebView
         self.webConfig = WebViewConfig()
-        webConfig.attach(to: newWebView, container: self)
+        webConfig?.attach(to: newWebView, container: self)
 
         if let url = currentURL {
             newWebView.load(URLRequest(url: url))
@@ -474,6 +514,7 @@ final class ContainerWindow: NSPanel {
     // MARK: - Container Fullscreen
 
     func syncFullscreenFlag() {
+        guard let webView else { return }
         let flag = fullscreenFillsContainer ? "true" : "false"
         webView.evaluateJavaScript("window.__fsFake = \(flag)", completionHandler: nil)
     }
@@ -500,6 +541,7 @@ final class ContainerWindow: NSPanel {
     // MARK: - Page Zoom
 
     func zoomIn() {
+        guard let webView else { return }
         let steps = WebViewConfig.zoomSteps
         let current = webView.pageZoom
         if let next = steps.first(where: { $0 > current + 0.01 }) {
@@ -508,6 +550,7 @@ final class ContainerWindow: NSPanel {
     }
 
     func zoomOut() {
+        guard let webView else { return }
         let steps = WebViewConfig.zoomSteps
         let current = webView.pageZoom
         if let prev = steps.last(where: { $0 < current - 0.01 }) {
@@ -520,6 +563,7 @@ final class ContainerWindow: NSPanel {
     }
 
     private func setZoom(_ level: CGFloat) {
+        guard let webView else { return }
         webView.pageZoom = level
         if let host = webView.url?.host {
             WebViewConfig.saveZoom(level, for: host, profileId: profile.id)
@@ -528,7 +572,7 @@ final class ContainerWindow: NSPanel {
     }
 
     func applySavedZoom() {
-        guard let host = webView.url?.host else { return }
+        guard let webView, let host = webView.url?.host else { return }
         if let saved = WebViewConfig.savedZoom(for: host, profileId: profile.id) {
             webView.pageZoom = saved
         } else {
@@ -549,6 +593,7 @@ final class ContainerWindow: NSPanel {
         isMobileMode = enabled
         toolbarView.updateMobileMode(enabled, disabled: isAlwaysDesktopSite)
 
+        guard let webView else { return }
         WebViewConfig.applyUserAgent(to: webView, mobile: enabled)
 
         if let url = webView.url {
@@ -651,7 +696,7 @@ final class ContainerWindow: NSPanel {
         let bubble = (NSApp.delegate as? AppDelegate)?.bubbles.first { $0.container === self }
         return ContainerState(
             id: containerID,
-            urlString: webView.url?.absoluteString ?? "",
+            urlString: webView?.url?.absoluteString ?? sleepURL?.absoluteString ?? "",
             x: Double(f.origin.x),
             y: Double(f.origin.y),
             width: Double(f.width),
@@ -682,11 +727,12 @@ extension ContainerWindow: ToolbarViewDelegate {
     func toolbarDidRequestMinimize() {
         (NSApp.delegate as? AppDelegate)?.minimizeToBubble(self)
     }
-    func toolbarDidRequestBack() { webView.goBack() }
-    func toolbarDidRequestForward() { webView.goForward() }
-    func toolbarDidRequestReload() { webView.reload() }
+    func toolbarDidRequestBack() { webView?.goBack() }
+    func toolbarDidRequestForward() { webView?.goForward() }
+    func toolbarDidRequestReload() { webView?.reload() }
 
     func toolbarDidNavigate(to urlString: String) {
+        guard let webView else { return }
         WebViewConfig.navigate(webView, to: urlString)
     }
 
@@ -699,7 +745,7 @@ extension ContainerWindow: ToolbarViewDelegate {
     }
 
     func toolbarDidRequestFillVideo() {
-        webView.evaluateJavaScript("window.__fsFillVideo && window.__fsFillVideo()", completionHandler: nil)
+        webView?.evaluateJavaScript("window.__fsFillVideo && window.__fsFillVideo()", completionHandler: nil)
     }
 
     func toolbarDidToggleScreenSharingHidden() {

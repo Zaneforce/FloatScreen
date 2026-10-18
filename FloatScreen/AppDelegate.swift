@@ -68,6 +68,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return container
     }
 
+    // MARK: - Central Focus/Restore
+
+    func focusOrRestoreContainer(_ container: ContainerWindow) {
+        // If it has a bubble, restore from bubble
+        if let bubble = bubbles.first(where: { $0.container === container }) {
+            restoreFromBubble(bubble)
+            return
+        }
+        // If sleeping without a bubble (shouldn't happen, but safety)
+        if container.isSleeping { container.wakeUp() }
+        // Focus the container
+        NSApp.activate(ignoringOtherApps: true)
+        container.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - Toggle All
 
     func toggleAllContainers() {
@@ -222,10 +237,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             addToRecentlyClosed(state)
         }
         // Stop media on close
-        window.webView.evaluateJavaScript(
+        window.webView?.evaluateJavaScript(
             "document.querySelectorAll('video,audio').forEach(function(m){m.pause()})",
             completionHandler: nil
         )
+        // Also remove any orphaned bubble
+        bubbles.removeAll { $0.container === window }
         containers.removeAll { $0 === window }
         menuBarController?.rebuildMenu()
     }
