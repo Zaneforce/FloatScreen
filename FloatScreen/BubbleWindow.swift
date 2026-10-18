@@ -550,7 +550,8 @@ private class BubbleContentView: NSView {
                 width: align(drawW), height: align(drawH)
             )
             ctx.interpolationQuality = .high
-            favicon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            let iconAlpha: CGFloat = owner.isSleepingIndicator ? 0.4 : 1.0
+            favicon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: iconAlpha)
         } else {
             let letter = String(owner.container?.pageTitle.prefix(1) ?? "?")
             let attrs: [NSAttributedString.Key: Any] = [
@@ -567,16 +568,31 @@ private class BubbleContentView: NSView {
 
         ctx.restoreGState()
 
-        // Sleeping indicator
+        // Sleeping indicator — bottom-left of circle, inside the window
         if owner.isSleepingIndicator {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-                .foregroundColor: isDark ? NSColor.systemYellow.withAlphaComponent(0.8) : NSColor.systemOrange,
+            let badgeSize: CGFloat = 18
+            let sleepRect = NSRect(
+                x: circleRect.minX + cs * 0.04,
+                y: circleRect.minY + cs * 0.04,
+                width: badgeSize, height: badgeSize
+            )
+            let outlineColor: NSColor = isDark
+                ? NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1) : .white
+            outlineColor.setFill()
+            NSBezierPath(ovalIn: sleepRect.insetBy(dx: -2, dy: -2)).fill()
+            NSColor.systemIndigo.withAlphaComponent(0.85).setFill()
+            NSBezierPath(ovalIn: sleepRect).fill()
+
+            let moonAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 10),
+                .foregroundColor: NSColor.white,
             ]
-            let zzz = NSAttributedString(string: "zzz", attributes: attrs)
-            let zSize = zzz.size()
-            zzz.draw(at: NSPoint(x: circleRect.midX - zSize.width / 2,
-                                 y: circleRect.minY - zSize.height - 1))
+            let moon = NSAttributedString(string: "\u{1F319}", attributes: moonAttrs)
+            let mSize = moon.size()
+            moon.draw(at: NSPoint(
+                x: sleepRect.midX - mSize.width / 2,
+                y: sleepRect.midY - mSize.height / 2
+            ))
         }
 
         // Badge at top-right of circle

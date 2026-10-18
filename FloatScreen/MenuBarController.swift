@@ -27,6 +27,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func rebuildMenu() {
         let menu = NSMenu()
 
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let aboutItem = NSMenuItem(title: "FloatScreen v\(version) (\(build))", action: nil, keyEquivalent: "")
+        aboutItem.isEnabled = false
+        menu.addItem(aboutItem)
+        menu.addItem(.separator())
+
         // New Container submenu per profile
         let newItem = NSMenuItem(title: "New Container", action: nil, keyEquivalent: "")
         let newSubmenu = NSMenu()
